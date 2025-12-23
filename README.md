@@ -93,6 +93,14 @@ func example(tx *sql.Tx) {
 }
 ```
 
+## Roadmap
+
+- [ ] Add more examples
+- [ ] Add support for named fields `db:"column_name"` (this can be done by using a naming strategy currently)
+- [ ] Add a project homepage
+- [ ] Add project docs
+- [ ] Add support for composite primary keys
+
 ## Project Philosophy
 
 - **Developer Written**: All core logic and architectural decisions were made and implemented by an actual developer.
