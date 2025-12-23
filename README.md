@@ -15,6 +15,10 @@ The project is currently used in a **production environment**.
 - **Generic CRUD Operations**: Automatic generation of `INSERT` and `UPDATE` queries for registered types.
 - **Minimal Dependencies**: Keeps your project slim and focused.
 
+## Docs
+
+Documentation is available at https://tracewayapp.github.io/go-lightning
+
 ## Usage Limitations
 
 - **ID Column Requirement**: For automatic `InsertGeneric` and `UpdateGeneric` operations, the library requires your tables to have an `id` column. It does not support tables without a primary `id` field for these specific automatic operations.
