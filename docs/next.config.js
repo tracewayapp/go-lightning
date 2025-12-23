@@ -12,6 +12,7 @@ module.exports = withNextra({
   images: {
     unoptimized: true
   },
-  basePath: process.env.BASE_PATH || '',
+  basePath: '/go-lightning',
+  assetPrefix: '/go-lightning/',
   trailingSlash: true
 })
