@@ -1,0 +1,460 @@
+# MySQL Guide
+
+This guide covers MySQL-specific features and best practices when using go-lightning with MySQL.
+
+## Installation
+
+```bash
+go get github.com/tracewayapp/go-lightning/lmy
+go get github.com/go-sql-driver/mysql
+```
+
+## Basic Setup
+
+### Import and Driver Registration
+
+```go
+package main
+
+import (
+    "database/sql"
+
+    _ "github.com/go-sql-driver/mysql"  // MySQL driver
+    "github.com/tracewayapp/go-lightning/lmy"
+
+    "yourproject/models"
+)
+```
+
+### Connection String
+
+```go
+db, err := sql.Open("mysql", "user:password@tcp(localhost:3306)/dbname?parseTime=true")
+if err != nil {
+    log.Fatal(err)
+}
+defer db.Close()
+```
+
+**Important parameters:**
+- `parseTime=true` - **Required** for scanning `time.Time` fields
+- `charset=utf8mb4` - Recommended for full Unicode support
+- `loc=Local` - Use local timezone
+
+**Full example:**
+```go
+dsn := "user:password@tcp(localhost:3306)/dbname?parseTime=true&charset=utf8mb4&loc=Local"
+db, err := sql.Open("mysql", dsn)
+```
+
+## Parameter Placeholders
+
+MySQL uses **question mark placeholders**: `?`
+
+```go
+// Single parameter
+user, err := lmy.SelectGenericSingle[User](tx,
+    "SELECT * FROM users WHERE id = ?", userId)
+
+// Multiple parameters
+users, err := lmy.SelectGeneric[User](tx,
+    "SELECT * FROM users WHERE age > ? AND city = ?", 25, "New York")
+
+// IN clause
+ids := []int{1, 2, 3}
+query := fmt.Sprintf("SELECT * FROM users WHERE id IN (%s)",
+    lmy.JoinForIn(ids))
+users, err := lmy.SelectGeneric[User](tx, query)
+```
+
+**Note:** Unlike PostgreSQL's `$1, $2`, MySQL placeholders are **positional** and **unnamed**.
+
+## INSERT with AUTO_INCREMENT
+
+MySQL's `lmy.InsertGeneric` uses `NULL` for auto-increment fields and retrieves the ID via `LastInsertId()`:
+
+```go
+user := &User{
+    FirstName: "John",
+    LastName:  "Doe",
+    Email:     "john@example.com",
+}
+
+id, err := lmy.InsertGeneric(tx, user)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Inserted user with ID: %d\n", id)
+```
+
+**Generated SQL:**
+```sql
+INSERT INTO users (id, first_name, last_name, email)
+VALUES (NULL, ?, ?, ?)
+```
+
+**Key differences from PostgreSQL:**
+- Uses `NULL` instead of `DEFAULT` for auto-increment ID
+- No `RETURNING` clause (MySQL doesn't support it)
+- Uses `LastInsertId()` to retrieve generated ID
+
+## Transaction Patterns
+
+### Basic Transaction
+
+```go
+tx, err := db.Begin()
+if err != nil {
+    return err
+}
+defer tx.Rollback()  // Safe even after Commit()
+
+// Operations
+id, err := lmy.InsertGeneric(tx, &user)
+if err != nil {
+    return err  // Rollback via defer
+}
+
+// Commit
+if err := tx.Commit(); err != nil {
+    return err
+}
+```
+
+### Transaction with Isolation Level
+
+```go
+tx, err := db.BeginTx(context.Background(), &sql.TxOptions{
+    Isolation: sql.LevelRepeatableRead,
+})
+```
+
+**MySQL isolation levels:**
+- `sql.LevelReadUncommitted`
+- `sql.LevelReadCommitted`
+- `sql.LevelRepeatableRead` - MySQL default
+- `sql.LevelSerializable`
+
+## Dynamic IN Clauses
+
+### For Integer IDs
+
+Use `JoinForIn` to build comma-separated lists:
+
+```go
+ids := []int{1, 2, 3, 4, 5}
+query := fmt.Sprintf("SELECT * FROM users WHERE id IN (%s)", lmy.JoinForIn(ids))
+users, err := lmy.SelectGeneric[User](tx, query)
+```
+
+**Output:** `SELECT * FROM users WHERE id IN (1,2,3,4,5)`
+
+### For Parameterized IN Clauses
+
+Use `JoinStringForIn`:
+
+```go
+usernames := []string{"alice", "bob", "charlie"}
+
+query := fmt.Sprintf("SELECT * FROM users WHERE username IN (%s)",
+    lmy.JoinStringForIn(0, usernames))
+
+users, err := lmy.SelectGeneric[User](tx, query, usernames...)
+```
+
+**Output:**
+- Query: `SELECT * FROM users WHERE username IN (?,?,?)`
+- Args: `["alice", "bob", "charlie"]`
+
+**Note:** The `offset` parameter in `JoinStringForIn` is **ignored** for MySQL because all placeholders are `?`. It's included for API compatibility with PostgreSQL.
+
+```go
+// Both produce the same result in MySQL
+lmy.JoinStringForIn(0, params)  // -> "?,?,?"
+lmy.JoinStringForIn(5, params)  // -> "?,?,?"  (offset ignored)
+```
+
+## Best Practices
+
+### 1. Always Use `parseTime=true`
+
+Without this, `time.Time` fields won't scan correctly:
+
+```go
+// ❌ Will fail to scan dates
+db, _ := sql.Open("mysql", "user:pass@tcp(host)/db")
+
+// ✅ Correct
+db, _ := sql.Open("mysql", "user:pass@tcp(host)/db?parseTime=true")
+```
+
+### 2. Use utf8mb4 for Unicode
+
+```go
+dsn := "user:pass@tcp(host)/db?parseTime=true&charset=utf8mb4"
+```
+
+**Schema:**
+```sql
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255),
+    email VARCHAR(255)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+### 3. Use Connection Pooling
+
+```go
+db.SetMaxOpenConns(25)
+db.SetMaxIdleConns(5)
+db.SetConnMaxLifetime(5 * time.Minute)
+```
+
+### 4. Prefer InnoDB Engine
+
+```sql
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255)
+) ENGINE=InnoDB;  -- Recommended over MyISAM
+```
+
+**Why InnoDB:**
+- Supports transactions (required for go-lightning)
+- Foreign key constraints
+- Row-level locking
+- Better concurrency
+
+### 5. Handle NULL Values
+
+```go
+type User struct {
+    Id        int
+    Name      string
+    Biography *string  // NULL-able column
+}
+
+// Insert with NULL
+user := &User{
+    Name:      "John",
+    Biography: nil,  // Will be NULL in database
+}
+```
+
+## UUID Support
+
+While MySQL can use UUIDs, it's less common than in PostgreSQL. go-lightning supports it:
+
+```go
+type Entity struct {
+    Id          string  // VARCHAR(36) or CHAR(36)
+    Name        string
+    Description string
+}
+
+func init() {
+    lmy.Register[Entity]()
+}
+
+// Auto-generate UUID
+entity := &Entity{Name: "My Entity"}
+uuid, err := lmy.InsertGenericUuid(tx, entity)
+
+// Or use existing UUID
+entity.Id = uuid.New().String()
+err := lmy.InsertGenericExistingUuid(tx, entity)
+```
+
+**Schema:**
+```sql
+CREATE TABLE entities (
+    id CHAR(36) PRIMARY KEY,  -- Fixed length for UUIDs
+    name VARCHAR(255),
+    description TEXT
+);
+```
+
+**Note:** MySQL doesn't have a native UUID type. Use `CHAR(36)` or `BINARY(16)` with custom encoding.
+
+## MySQL-Specific Features
+
+### JSON Support
+
+MySQL 5.7+ supports JSON columns:
+
+```go
+type Product struct {
+    Id         int
+    Name       string
+    Attributes string  // JSON string
+}
+
+// Store JSON
+attrs := `{"color": "red", "size": "large"}`
+product := &Product{
+    Name:       "T-Shirt",
+    Attributes: attrs,
+}
+id, err := lmy.InsertGeneric(tx, product)
+
+// Query JSON
+products, err := lmy.SelectGeneric[Product](tx,
+    "SELECT * FROM products WHERE JSON_EXTRACT(attributes, '$.color') = ?", "red")
+```
+
+**Schema:**
+```sql
+CREATE TABLE products (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255),
+    attributes JSON
+);
+```
+
+### Full-Text Search
+
+```sql
+-- Create full-text index
+CREATE FULLTEXT INDEX idx_content ON articles(title, content);
+```
+
+```go
+// Search
+articles, err := lmy.SelectGeneric[Article](tx,
+    "SELECT * FROM articles WHERE MATCH(title, content) AGAINST (? IN NATURAL LANGUAGE MODE)",
+    "golang database")
+```
+
+## Common Patterns
+
+### Upsert (INSERT ... ON DUPLICATE KEY UPDATE)
+
+```go
+query := `
+    INSERT INTO users (id, name, email)
+    VALUES (?, ?, ?)
+    ON DUPLICATE KEY UPDATE name = VALUES(name)
+`
+result, err := tx.Exec(query, user.Id, user.Name, user.Email)
+id, _ := result.LastInsertId()
+```
+
+### Bulk Insert
+
+```go
+query := `
+    INSERT INTO users (first_name, last_name, email)
+    VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)
+`
+_, err := tx.Exec(query,
+    "John", "Doe", "john@example.com",
+    "Jane", "Doe", "jane@example.com",
+    "Bob", "Smith", "bob@example.com",
+)
+```
+
+### Soft Deletes
+
+```go
+type User struct {
+    Id        int
+    Name      string
+    DeletedAt *time.Time  // NULL when not deleted
+}
+
+// Soft delete
+err := lmy.Update(tx, "UPDATE users SET deleted_at = NOW() WHERE id = ?", userId)
+
+// Query only active users
+users, err := lmy.SelectGeneric[User](tx,
+    "SELECT * FROM users WHERE deleted_at IS NULL")
+```
+
+## Differences from PostgreSQL
+
+| Feature | PostgreSQL (lpg) | MySQL (lmy) |
+|---------|-----------------|-------------|
+| **Placeholders** | `$1, $2, $3` | `?` |
+| **INSERT Return** | `RETURNING id` | `LastInsertId()` |
+| **Auto-Increment** | `SERIAL` / `IDENTITY` | `AUTO_INCREMENT` |
+| **Auto-Increment INSERT** | `DEFAULT` | `NULL` |
+| **UUID Native Support** | Yes (UUID type) | No (use CHAR/BINARY) |
+| **Array Types** | Yes | No |
+| **Parameter Renumbering** | Yes (in UpdateGeneric) | No (not needed) |
+| **JSON Type** | JSONB (binary) | JSON (text-based) |
+
+### Parameter Renumbering
+
+PostgreSQL's `lpg.UpdateGeneric` automatically renumbers `$N` placeholders. MySQL doesn't need this because all placeholders are `?`:
+
+```go
+// PostgreSQL
+lpg.UpdateGeneric(tx, user, "id = $1", userId)
+// WHERE parameter $1 is renumbered to $4 internally
+
+// MySQL
+lmy.UpdateGeneric(tx, user, "id = ?", userId)
+// No renumbering needed - just adds ? to end
+```
+
+## Troubleshooting
+
+### "invalid connection"
+
+Check connection string format:
+
+```go
+// ❌ Wrong
+"user:pass@localhost:3306/db"
+
+// ✅ Correct
+"user:pass@tcp(localhost:3306)/db"
+```
+
+### "unsupported Scan, storing driver.Value type []uint8 into type *time.Time"
+
+Add `parseTime=true` to connection string:
+
+```go
+"user:pass@tcp(host)/db?parseTime=true"
+```
+
+### "Error 1364: Field 'X' doesn't have a default value"
+
+Your schema requires a value but go-lightning isn't providing one. Options:
+
+1. Add field to struct
+2. Make column NULL-able: `ALTER TABLE users MODIFY column_name VARCHAR(255) NULL`
+3. Add default value: `ALTER TABLE users MODIFY column_name VARCHAR(255) DEFAULT ''`
+
+### "Error 2006: MySQL server has gone away"
+
+Connection was idle too long. Set connection lifetime:
+
+```go
+db.SetConnMaxLifetime(5 * time.Minute)
+db.SetMaxIdleConns(10)
+```
+
+### "Error 1206: The total number of locks exceeds the lock table size"
+
+Increase InnoDB buffer pool size in my.cnf:
+
+```ini
+[mysqld]
+innodb_buffer_pool_size = 256M
+```
+
+## Version Compatibility
+
+go-lightning works with:
+- **MySQL 5.7+** - Recommended (JSON support, better performance)
+- **MySQL 8.0+** - Recommended (window functions, CTEs)
+- **MariaDB 10.2+** - Compatible
+
+## Next Steps
+
+- [Transactions Guide](/guides/transactions) - Advanced transaction patterns
+- [MySQL Complete Example](/examples/mysql-complete) - Full working example
+- [MySQL API Reference](/api-reference/mysql/crud-operations) - Complete API documentation

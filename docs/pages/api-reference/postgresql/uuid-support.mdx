@@ -1,0 +1,36 @@
+# UUID Support
+
+PostgreSQL module includes built-in UUID support for string-based primary keys.
+
+## InsertGenericUuid
+
+Auto-generates UUID for new entities.
+
+```go
+entity := &Entity{Name: "My Entity"}
+uuid, err := lpg.InsertGenericUuid(tx, entity)
+// entity.Id is set to generated UUID
+```
+
+## InsertGenericExistingUuid
+
+Use pre-generated UUID.
+
+```go
+entity := &Entity{
+    Id:   uuid.New().String(),
+    Name: "My Entity",
+}
+err := lpg.InsertGenericExistingUuid(tx, entity)
+```
+
+## Database Schema
+
+```sql
+CREATE TABLE entities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL
+);
+```
+
+See [PostgreSQL Guide](/guides/postgresql#uuid-support) for complete documentation.

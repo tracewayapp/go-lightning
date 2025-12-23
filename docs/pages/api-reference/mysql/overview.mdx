@@ -1,0 +1,46 @@
+# MySQL Module Overview
+
+The `lmy` package provides MySQL-specific implementations of go-lightning.
+
+## Installation
+
+```bash
+go get github.com/tracewayapp/go-lightning/lmy
+```
+
+## Import
+
+```go
+import "github.com/tracewayapp/go-lightning/lmy"
+```
+
+## Key Features
+
+- **Parameter placeholders**: `?`
+- **INSERT with AUTO_INCREMENT**: Uses `NULL` + `LastInsertId()`
+- **UUID support**: Same as PostgreSQL
+- **Simpler parameters**: No renumbering needed
+
+## Quick Reference
+
+```go
+// Registration
+lmy.Register[User]()
+
+// SELECT operations
+users, err := lmy.SelectGeneric[User](tx, query, args...)
+user, err := lmy.SelectGenericSingle[User](tx, query, args...)
+
+// INSERT operations
+id, err := lmy.InsertGeneric(tx, &user)
+uuid, err := lmy.InsertGenericUuid(tx, &entity)
+
+// UPDATE/DELETE
+err := lmy.UpdateGeneric(tx, &user, where, args...)
+err := lmy.Delete(tx, query, args...)
+
+// Helpers
+placeholders := lmy.JoinStringForIn(0, params)  // All ?
+```
+
+See [MySQL Guide](/guides/mysql) for comprehensive documentation.

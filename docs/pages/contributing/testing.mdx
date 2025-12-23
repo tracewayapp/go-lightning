@@ -1,0 +1,67 @@
+# Testing
+
+Testing philosophy and practices for go-lightning.
+
+## Test Categories
+
+### Unit Tests
+
+Pure functions without database dependencies:
+
+```go
+func TestNamingStrategy(t *testing.T) {
+    strategy := DefaultDbNamingStrategy{}
+    result := strategy.GetTableNameFromStructName("User")
+    assert.Equal(t, "users", result)
+}
+```
+
+### Integration Tests
+
+Tests using sqlmock:
+
+```go
+import "github.com/DATA-DOG/go-sqlmock"
+
+func TestInsertGeneric(t *testing.T) {
+    db, mock, _ := sqlmock.New()
+    defer db.Close()
+
+    mock.ExpectBegin()
+    mock.ExpectQuery("INSERT INTO users").
+        WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+    mock.ExpectCommit()
+
+    tx, _ := db.Begin()
+    id, err := lpg.InsertGeneric(tx, &User{Name: "Test"})
+    assert.NoError(t, err)
+    assert.Equal(t, 1, id)
+}
+```
+
+## Running Tests
+
+```bash
+# All tests
+go test ./...
+
+# With coverage
+go test -cover ./...
+
+# Specific test
+go test -run TestRegister ./...
+```
+
+## Test Structs
+
+Common test structs used:
+
+- `TestUser` - Integer ID
+- `TestProduct` - String ID
+- `TestUuidEntity` - UUID field
+
+## Coverage Expectations
+
+- Core functions: >80%
+- Database modules: >70%
+- Integration tests for all operations

@@ -1,0 +1,201 @@
+# Generic Operations
+
+Type-safe database operations with automatic struct-to-row mapping.
+
+All generic operations require prior type registration with `Register[T]()`.
+
+## SelectGeneric
+
+Execute a SELECT query and return multiple rows as a slice of structs.
+
+### Signature
+
+```go
+func SelectGeneric[T any](tx *sql.Tx, query string, args ...any) ([]*T, error)
+```
+
+### Parameters
+
+- `T` - Struct type (must be registered)
+- `tx` - Database transaction
+- `query` - SQL SELECT query
+- `args` - Query parameters (variadic)
+
+### Returns
+
+- `[]*T` - Slice of pointers to struct instances
+- `error` - Error if query fails or columns don't match struct
+
+### Example
+
+```go
+users, err := lpg.SelectGeneric[User](tx, "SELECT * FROM users WHERE age > $1", 25)
+if err != nil {
+    return err
+}
+for _, user := range users {
+    fmt.Printf("%s %s\n", user.FirstName, user.LastName)
+}
+```
+
+### Behavior
+
+- Returns **empty slice** (not nil) when no rows found
+- Validates all returned columns exist in struct
+- Automatically maps columns to struct fields
+
+---
+
+## SelectGenericSingle
+
+Execute a SELECT query and return the first row or nil.
+
+### Signature
+
+```go
+func SelectGenericSingle[T any](tx *sql.Tx, query string, args ...any) (*T, error)
+```
+
+### Returns
+
+- `*T` - Pointer to struct instance, or `nil` if no rows
+- `error` - Error if query fails
+
+### Example
+
+```go
+user, err := lpg.SelectGenericSingle[User](tx, "SELECT * FROM users WHERE id = $1", userId)
+if err != nil {
+    return err
+}
+if user == nil {
+    return errors.New("user not found")
+}
+fmt.Println(user.Name)
+```
+
+### Behavior
+
+- Returns `nil, nil` (not error) when no rows found
+- Returns first row if multiple rows match
+
+---
+
+## InsertGeneric
+
+Insert a struct and return the auto-generated integer ID.
+
+### Signature
+
+```go
+func InsertGeneric[T any](tx *sql.Tx, t *T) (int, error)
+```
+
+### Parameters
+
+- `t` - Pointer to struct instance
+
+### Returns
+
+- `int` - Auto-generated ID from database
+- `error` - Error if insert fails
+
+### Requirements
+
+- Struct must have integer `Id` field
+- Database column must be auto-increment
+
+### Example
+
+```go
+user := &User{
+    FirstName: "John",
+    LastName:  "Doe",
+    Email:     "john@example.com",
+}
+id, err := lpg.InsertGeneric(tx, user)
+if err != nil {
+    return err
+}
+fmt.Printf("Inserted user with ID: %d\n", id)
+```
+
+---
+
+## InsertGenericUuid
+
+Insert a struct with auto-generated UUID for string `Id` field.
+
+### Signature
+
+```go
+func InsertGenericUuid[T any](tx *sql.Tx, t *T) (string, error)
+```
+
+### Returns
+
+- `string` - Generated UUID
+- `error` - Error if insert fails
+
+### Example
+
+```go
+entity := &Entity{Name: "My Entity"}
+uuid, err := lpg.InsertGenericUuid(tx, entity)
+// entity.Id is now set to the generated UUID
+```
+
+---
+
+## InsertGenericExistingUuid
+
+Insert a struct with pre-existing UUID in the `Id` field.
+
+### Signature
+
+```go
+func InsertGenericExistingUuid[T any](tx *sql.Tx, t *T) error
+```
+
+### Example
+
+```go
+entity := &Entity{
+    Id:   uuid.New().String(),
+    Name: "My Entity",
+}
+err := lpg.InsertGenericExistingUuid(tx, entity)
+```
+
+---
+
+## UpdateGeneric
+
+Update all fields of a struct based on a WHERE clause.
+
+### Signature
+
+```go
+func UpdateGeneric[T any](tx *sql.Tx, t *T, where string, args ...any) error
+```
+
+### Parameters
+
+- `t` - Pointer to struct with updated values
+- `where` - WHERE clause (required, non-empty)
+- `args` - WHERE clause parameters
+
+### Important
+
+- Updates **ALL** fields in struct
+- WHERE clause is **required**
+- PostgreSQL: `$N` placeholders are automatically renumbered
+
+### Example
+
+```go
+user.FirstName = "Jane"
+err := lpg.UpdateGeneric(tx, user, "id = $1", user.Id)
+```
+
+See [API Reference](/api-reference/core/generic-operations) for complete documentation.

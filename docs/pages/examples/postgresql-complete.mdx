@@ -1,0 +1,130 @@
+# PostgreSQL Complete Example
+
+Complete working example with go-lightning and PostgreSQL, including error handling and best practices.
+
+This example is based on the actual code in `lpg/examples/userscrud/`.
+
+## Project Structure
+
+```
+project/
+├── go.mod
+├── main.go
+└── models/
+    └── user.go
+```
+
+## models/user.go
+
+```go
+package models
+
+import "github.com/tracewayapp/go-lightning/lpg"
+
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+    Email     string
+}
+
+func init() {
+    lpg.Register[User]()
+}
+```
+
+## main.go
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    "yourproject/models"
+
+    _ "github.com/jackc/pgx/v5/stdlib"
+    "github.com/tracewayapp/go-lightning/lpg"
+)
+
+func main() {
+    db, err := sql.Open("pgx",
+        "postgres://user:password@localhost:5432/dbname?sslmode=disable")
+    if err != nil {
+        log.Fatalf("Unable to connect: %v\n", err)
+    }
+    defer db.Close()
+
+    tx, err := db.Begin()
+    if err != nil {
+        log.Fatalf("Failed to begin transaction: %v\n", err)
+    }
+    defer tx.Rollback()
+
+    // INSERT
+    id, err := lpg.InsertGeneric(tx, &models.User{
+        FirstName: "John",
+        LastName:  "Doe",
+        Email:     "john.doe@example.com",
+    })
+    if err != nil {
+        log.Fatalf("Insert failed: %v\n", err)
+    }
+    fmt.Printf("Inserted user with ID: %d\n", id)
+
+    // SELECT SINGLE
+    user, err := lpg.SelectGenericSingle[models.User](tx,
+        "SELECT * FROM users WHERE id = $1", id)
+    if err != nil {
+        log.Fatalf("Select failed: %v\n", err)
+    }
+    if user != nil {
+        fmt.Printf("Found: %s %s (%s)\n",
+            user.FirstName, user.LastName, user.Email)
+    }
+
+    // SELECT MULTIPLE
+    users, err := lpg.SelectGeneric[models.User](tx,
+        "SELECT * FROM users LIMIT 5")
+    if err != nil {
+        log.Fatalf("Select multiple failed: %v\n", err)
+    }
+    fmt.Printf("Found %d users\n", len(users))
+
+    // UPDATE
+    user.FirstName = "Jane"
+    err = lpg.UpdateGeneric(tx, user, "id = $1", id)
+    if err != nil {
+        log.Fatalf("Update failed: %v\n", err)
+    }
+    fmt.Println("Updated user")
+
+    // DELETE
+    err = lpg.Delete(tx, "DELETE FROM users WHERE id = $1", id)
+    if err != nil {
+        log.Fatalf("Delete failed: %v\n", err)
+    }
+    fmt.Printf("Deleted user %d\n", id)
+
+    // Commit
+    if err := tx.Commit(); err != nil {
+        log.Fatalf("Commit failed: %v\n", err)
+    }
+
+    fmt.Println("CRUD example completed successfully!")
+}
+```
+
+## Database Schema
+
+```sql
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL
+);
+```
+
+See [Quick Start](/getting-started/quick-start) for more details.

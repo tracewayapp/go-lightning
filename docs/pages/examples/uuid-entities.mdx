@@ -1,0 +1,78 @@
+# UUID Entities Example
+
+Using UUID primary keys instead of auto-increment integers.
+
+## Entity with UUID
+
+```go
+package models
+
+import "github.com/tracewayapp/go-lightning/lpg"
+
+type Entity struct {
+    Id          string  // UUID stored as string
+    Name        string
+    Description string
+}
+
+func init() {
+    lpg.Register[Entity]()
+}
+```
+
+## Auto-Generated UUID
+
+```go
+entity := &Entity{
+    Name:        "My Entity",
+    Description: "Description here",
+}
+
+// Generates UUID automatically
+uuid, err := lpg.InsertGenericUuid(tx, entity)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Generated UUID: %s\n", uuid)
+fmt.Printf("Entity ID: %s\n", entity.Id)  // Same as uuid
+```
+
+## Pre-Generated UUID
+
+```go
+import "github.com/google/uuid"
+
+entity := &Entity{
+    Id:          uuid.New().String(),
+    Name:        "My Entity",
+    Description: "Description",
+}
+
+err := lpg.InsertGenericExistingUuid(tx, entity)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+## PostgreSQL Schema
+
+```sql
+CREATE TABLE entities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    description TEXT
+);
+```
+
+## MySQL Schema
+
+```sql
+CREATE TABLE entities (
+    id CHAR(36) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT
+);
+```
+
+See [PostgreSQL Guide](/guides/postgresql#uuid-support) for more details.

@@ -1,0 +1,132 @@
+# Introduction
+
+## What is go-lightning?
+
+**go-lightning** is a lightweight Go library for simplified database operations using generics. It provides type-safe wrappers around Go's standard `database/sql` package with automatic struct-to-table mapping, reducing boilerplate code for common CRUD operations.
+
+## Philosophy
+
+go-lightning follows these design principles:
+
+### 1. **Thin Abstraction Layer**
+
+go-lightning is not an ORM. It's a convenience layer over `database/sql` that handles the repetitive parts (struct scanning, query templates) while keeping you in control of SQL queries and transaction management.
+
+### 2. **Explicit Over Implicit**
+
+- **Explicit registration** - Types must be registered before use with `Register[T]()`
+- **Explicit transactions** - All operations require a `*sql.Tx` parameter
+- **Explicit SQL** - You write the queries; go-lightning handles the mapping
+
+### 3. **Type Safety**
+
+Leveraging Go 1.18+ generics for compile-time type checking. Errors are caught at compile time, not runtime.
+
+### 4. **Performance**
+
+Reflection happens once at registration time to build query templates and field mappings. During execution, pre-built templates are used with zero reflection overhead.
+
+## Why Use go-lightning?
+
+### ✅ Use go-lightning when you:
+
+- Want to reduce boilerplate code for basic CRUD operations
+- Need type-safe database operations with compile-time checking
+- Prefer writing SQL but don't want manual struct scanning
+- Value explicit control over transactions and queries
+- Want automatic naming convention mapping (e.g., `UserProfile` → `user_profiles`)
+
+### ❌ Don't use go-lightning when you:
+
+- Need complex query building (use raw SQL or a query builder)
+- Want automatic migrations or schema management (use a migration tool)
+- Prefer active record patterns (use an ORM like GORM)
+- Need database-agnostic query generation (write database-specific queries)
+
+## Architecture Overview
+
+### The Flow
+
+```
+1. Define Struct          →  type User struct { Id int; Name string }
+2. Register Type          →  lpg.Register[User]()
+3. FieldMap Created       →  (Reflection happens here, once)
+4. Use Generic Operations →  lpg.InsertGeneric(tx, &user)
+5. Fast Execution         →  (Pre-built templates, zero reflection)
+```
+
+### Key Components
+
+#### **Registration System**
+
+Before using a struct type with generic operations, you must register it:
+
+```go
+func init() {
+    lpg.Register[User]()
+}
+```
+
+This builds a `FieldMap` containing:
+- Column name mappings (struct field → database column)
+- Pre-built INSERT/UPDATE query templates
+- ID field detection for special handling
+
+#### **Naming Strategy**
+
+The `DbNamingStrategy` interface converts Go naming to database naming:
+
+- **Struct names** → **Table names**: `UserProfile` → `user_profiles` (snake_case + plural)
+- **Field names** → **Column names**: `FirstName` → `first_name` (snake_case)
+
+You can provide custom strategies for different conventions.
+
+#### **Generic Operations**
+
+Type-safe functions that automatically map between structs and database rows:
+
+```go
+lpg.SelectGeneric[User](tx, query, args...)      // Returns []*User
+lpg.InsertGeneric(tx, &user)                     // Returns int (ID)
+lpg.UpdateGeneric(tx, &user, where, args...)     // Updates all fields
+```
+
+#### **Manual Operations**
+
+For cases requiring custom mapping, use manual operations with a `mapLine` function:
+
+```go
+lpg.SelectMultiple[User](tx, mapLine, query, args...)
+```
+
+## Performance Characteristics
+
+### Registration Time (One-Time Cost)
+
+- **Reflection**: Inspects struct fields to build field map
+- **Query Building**: Generates INSERT and UPDATE query templates
+- **Happens**: At `init()` time or first `Register[]` call
+
+### Query Execution (Runtime)
+
+- **Zero Reflection**: Uses pre-built templates and field indexes
+- **Direct Scanning**: Pointers to struct fields are pre-calculated
+- **Performance**: Comparable to hand-written database/sql code
+
+## Comparison with Alternatives
+
+| Feature | go-lightning | database/sql | GORM |
+|---------|-------------|--------------|------|
+| **Boilerplate** | Low | High | Very Low |
+| **Type Safety** | High (generics) | Medium | Medium |
+| **Control** | Full | Full | Limited |
+| **Learning Curve** | Low | None | High |
+| **Magic** | Minimal | None | High |
+| **Performance** | Fast | Fast | Medium |
+| **Query Building** | Manual SQL | Manual SQL | Auto-generated |
+
+## Next Steps
+
+- [Installation](/getting-started/installation) - Install go-lightning for your database
+- [Quick Start](/getting-started/quick-start) - Build your first CRUD application
+- [Core Concepts](/getting-started/core-concepts) - Deep dive into the architecture

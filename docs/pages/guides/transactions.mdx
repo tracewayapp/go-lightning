@@ -1,0 +1,583 @@
+# Transactions
+
+A comprehensive guide to working with database transactions in go-lightning.
+
+## Why Transactions?
+
+All go-lightning operations require a `*sql.Tx` (transaction) parameter, not `*sql.DB`. This design choice provides:
+
+1. **Explicit control** - You decide when to commit or rollback
+2. **Consistency** - Multiple operations execute as a single atomic unit
+3. **Isolation** - Changes are isolated until committed
+4. **Safety** - Automatic rollback on errors using `defer`
+
+## Basic Transaction Pattern
+
+The recommended pattern for transactions:
+
+```go
+// Begin transaction
+tx, err := db.Begin()
+if err != nil {
+    return err
+}
+defer tx.Rollback()  // Rollback if not committed
+
+// Perform database operations
+id, err := lpg.InsertGeneric(tx, &user)
+if err != nil {
+    return err  // Automatic rollback via defer
+}
+
+// More operations...
+user, err := lpg.SelectGenericSingle[User](tx, "SELECT * FROM users WHERE id = $1", id)
+if err != nil {
+    return err
+}
+
+// Commit transaction
+if err := tx.Commit(); err != nil {
+    return err
+}
+
+// Success - changes are persisted
+return nil
+```
+
+## The Deferred Rollback Pattern
+
+### Why `defer tx.Rollback()`?
+
+```go
+defer tx.Rollback()
+```
+
+This line ensures cleanup regardless of how the function exits:
+
+**Safe behavior:**
+- If `Commit()` succeeds → `Rollback()` is a **no-op** (does nothing)
+- If error occurs → `Rollback()` **reverts changes**
+- If function panics → `Rollback()` **still executes**
+
+**Without defer:**
+
+```go
+// ❌ Don't do this
+tx, _ := db.Begin()
+
+id, err := lpg.InsertGeneric(tx, &user)
+if err != nil {
+    tx.Rollback()  // Must remember every time
+    return err
+}
+
+// More operations...
+err = lpg.UpdateGeneric(tx, user, "id = $1", id)
+if err != nil {
+    tx.Rollback()  // Easy to forget!
+    return err
+}
+
+tx.Commit()
+```
+
+**With defer:**
+
+```go
+// ✅ Always use defer
+tx, _ := db.Begin()
+defer tx.Rollback()  // One line, always executes
+
+id, err := lpg.InsertGeneric(tx, &user)
+if err != nil {
+    return err  // Rollback happens automatically
+}
+
+// ... more operations ...
+
+tx.Commit()  // If reached, rollback is no-op
+```
+
+## Transaction Isolation Levels
+
+Control how transactions interact with each other:
+
+### Available Levels
+
+```go
+import "database/sql"
+
+tx, err := db.BeginTx(context.Background(), &sql.TxOptions{
+    Isolation: sql.LevelRepeatableRead,
+})
+defer tx.Rollback()
+```
+
+**Isolation levels** (from weakest to strongest):
+
+| Level | Description | Dirty Read | Non-Repeatable Read | Phantom Read |
+|-------|-------------|------------|---------------------|--------------|
+| `LevelDefault` | Database default | Depends | Depends | Depends |
+| `LevelReadUncommitted` | Can see uncommitted changes | ✅ | ✅ | ✅ |
+| `LevelReadCommitted` | See only committed changes | ❌ | ✅ | ✅ |
+| `LevelRepeatableRead` | Consistent reads within tx | ❌ | ❌ | ✅ |
+| `LevelSerializable` | Full isolation | ❌ | ❌ | ❌ |
+
+### Database Defaults
+
+- **PostgreSQL**: `ReadCommitted`
+- **MySQL**: `RepeatableRead`
+
+### When to Use Each Level
+
+**ReadUncommitted** (avoid):
+- Rarely used
+- Can see dirty (uncommitted) data
+- Best for read-heavy reporting where exact accuracy isn't critical
+
+**ReadCommitted** (PostgreSQL default):
+```go
+tx, _ := db.BeginTx(ctx, &sql.TxOptions{
+    Isolation: sql.LevelReadCommitted,
+})
+```
+- Good for most applications
+- Prevents dirty reads
+- Allows concurrent updates
+
+**RepeatableRead** (MySQL default):
+```go
+tx, _ := db.BeginTx(ctx, &sql.TxOptions{
+    Isolation: sql.LevelRepeatableRead,
+})
+```
+- Stronger consistency
+- Same query returns same results within transaction
+- Prevents non-repeatable reads
+
+**Serializable** (strongest):
+```go
+tx, _ := db.BeginTx(ctx, &sql.TxOptions{
+    Isolation: sql.LevelSerializable,
+})
+```
+- Full isolation
+- Transactions execute as if serial (one at a time)
+- Prevents phantom reads
+- **Slowest** - use sparingly
+
+## Read-Only Transactions
+
+Optimize for read-only workloads:
+
+```go
+tx, err := db.BeginTx(context.Background(), &sql.TxOptions{
+    ReadOnly: true,
+})
+defer tx.Rollback()
+
+// Only SELECT operations
+users, err := lpg.SelectGeneric[User](tx, "SELECT * FROM users")
+
+// INSERT/UPDATE/DELETE will fail
+// id, err := lpg.InsertGeneric(tx, &user)  // Error!
+
+tx.Commit()
+```
+
+**Benefits:**
+- Database can optimize (no locking needed)
+- Prevents accidental writes
+- Slightly faster for large reads
+
+## Context and Timeouts
+
+Use context for timeouts and cancellation:
+
+### With Timeout
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+tx, err := db.BeginTx(ctx, nil)
+if err != nil {
+    return err
+}
+defer tx.Rollback()
+
+// Operations must complete within 5 seconds
+users, err := lpg.SelectGeneric[User](tx, "SELECT * FROM users")
+if err != nil {
+    return err  // Could be timeout error
+}
+
+tx.Commit()
+```
+
+### With Cancellation
+
+```go
+ctx, cancel := context.WithCancel(context.Background())
+
+// Cancel from another goroutine if needed
+go func() {
+    <-stopChan
+    cancel()  // Cancels transaction
+}()
+
+tx, err := db.BeginTx(ctx, nil)
+defer tx.Rollback()
+
+// Operations...
+```
+
+## Multiple Operations in One Transaction
+
+Transactions ensure atomicity across multiple operations:
+
+### Example: Transfer Money
+
+```go
+func TransferMoney(db *sql.DB, fromUserID, toUserID int, amount float64) error {
+    tx, err := db.Begin()
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    // Deduct from sender
+    err = lpg.Update(tx,
+        "UPDATE accounts SET balance = balance - $1 WHERE user_id = $2",
+        amount, fromUserID)
+    if err != nil {
+        return err  // Automatic rollback
+    }
+
+    // Add to receiver
+    err = lpg.Update(tx,
+        "UPDATE accounts SET balance = balance + $1 WHERE user_id = $2",
+        amount, toUserID)
+    if err != nil {
+        return err  // Automatic rollback - sender amount restored
+    }
+
+    // Both operations succeed or both fail
+    return tx.Commit()
+}
+```
+
+### Example: Create User with Profile
+
+```go
+func CreateUserWithProfile(db *sql.DB, user *User, profile *Profile) error {
+    tx, err := db.Begin()
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    // Insert user
+    userID, err := lpg.InsertGeneric(tx, user)
+    if err != nil {
+        return err
+    }
+
+    // Insert profile with user's ID
+    profile.UserID = userID
+    _, err = lpg.InsertGeneric(tx, profile)
+    if err != nil {
+        return err  // User insert is rolled back too
+    }
+
+    return tx.Commit()
+}
+```
+
+## Nested Transactions (Savepoints)
+
+Go's `database/sql` doesn't support nested transactions, but you can use savepoints:
+
+### PostgreSQL Savepoints
+
+```go
+tx, _ := db.Begin()
+defer tx.Rollback()
+
+// Create savepoint
+_, err := tx.Exec("SAVEPOINT sp1")
+if err != nil {
+    return err
+}
+
+// Some operations
+id, err := lpg.InsertGeneric(tx, &user)
+if err != nil {
+    // Rollback to savepoint (partial rollback)
+    tx.Exec("ROLLBACK TO SAVEPOINT sp1")
+} else {
+    // Release savepoint
+    tx.Exec("RELEASE SAVEPOINT sp1")
+}
+
+// Continue with other operations
+// ...
+
+tx.Commit()
+```
+
+### MySQL Savepoints
+
+Same syntax works in MySQL:
+
+```go
+tx, _ := db.Begin()
+defer tx.Rollback()
+
+tx.Exec("SAVEPOINT sp1")
+
+// Operations...
+
+if err != nil {
+    tx.Exec("ROLLBACK TO SAVEPOINT sp1")
+}
+
+tx.Commit()
+```
+
+## Connection Pooling
+
+Transactions use connections from the pool:
+
+```go
+// Configure pool
+db.SetMaxOpenConns(25)       // Max connections
+db.SetMaxIdleConns(5)        // Idle connections kept open
+db.SetConnMaxLifetime(5 * time.Minute)  // Max connection age
+```
+
+**Important:**
+- Each transaction **holds a connection** until committed or rolled back
+- Long-running transactions **block other operations**
+- Always commit or rollback promptly
+
+### Pool Exhaustion
+
+```go
+// ❌ Bad: Holds connection indefinitely
+tx, _ := db.Begin()
+time.Sleep(10 * time.Minute)  // Connection stuck!
+tx.Commit()
+
+// ✅ Good: Quick transaction
+tx, _ := db.Begin()
+defer tx.Rollback()
+lpg.InsertGeneric(tx, &user)
+tx.Commit()  // Connection returned to pool
+```
+
+## Error Handling Patterns
+
+### Basic Error Handling
+
+```go
+tx, err := db.Begin()
+if err != nil {
+    return fmt.Errorf("begin tx: %w", err)
+}
+defer tx.Rollback()
+
+id, err := lpg.InsertGeneric(tx, &user)
+if err != nil {
+    return fmt.Errorf("insert user: %w", err)
+}
+
+if err := tx.Commit(); err != nil {
+    return fmt.Errorf("commit tx: %w", err)
+}
+
+return nil
+```
+
+### With Logging
+
+```go
+import "log"
+
+tx, err := db.Begin()
+if err != nil {
+    log.Printf("Failed to begin transaction: %v", err)
+    return err
+}
+defer func() {
+    if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+        log.Printf("Rollback failed: %v", err)
+    }
+}()
+
+// Operations...
+```
+
+### With Custom Errors
+
+```go
+var (
+    ErrUserExists = errors.New("user already exists")
+    ErrInvalidData = errors.New("invalid data")
+)
+
+func CreateUser(db *sql.DB, user *User) error {
+    tx, err := db.Begin()
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    // Check if user exists
+    existing, _ := lpg.SelectGenericSingle[User](tx,
+        "SELECT * FROM users WHERE email = $1", user.Email)
+    if existing != nil {
+        return ErrUserExists  // Rollback via defer
+    }
+
+    // Validate
+    if user.Email == "" {
+        return ErrInvalidData  // Rollback via defer
+    }
+
+    // Insert
+    _, err = lpg.InsertGeneric(tx, user)
+    if err != nil {
+        return err
+    }
+
+    return tx.Commit()
+}
+```
+
+## Best Practices
+
+### 1. Always Use defer tx.Rollback()
+
+```go
+// ✅ Always
+tx, _ := db.Begin()
+defer tx.Rollback()
+```
+
+### 2. Keep Transactions Short
+
+```go
+// ❌ Bad: Long-running transaction
+tx, _ := db.Begin()
+defer tx.Rollback()
+
+for i := 0; i < 10000; i++ {
+    lpg.InsertGeneric(tx, &records[i])  // Holds connection too long
+}
+tx.Commit()
+
+// ✅ Good: Batch commits
+for i := 0; i < len(records); i += 100 {
+    tx, _ := db.Begin()
+    for j := i; j < i+100 && j < len(records); j++ {
+        lpg.InsertGeneric(tx, &records[j])
+    }
+    tx.Commit()  // Release connection every 100 records
+}
+```
+
+### 3. Don't Perform I/O Inside Transactions
+
+```go
+// ❌ Bad: Network call during transaction
+tx, _ := db.Begin()
+defer tx.Rollback()
+
+user, _ := lpg.SelectGenericSingle[User](tx, "SELECT * FROM users WHERE id = $1", id)
+
+// HTTP call while holding transaction!
+resp, _ := http.Get("https://api.example.com/validate")  // Bad!
+
+tx.Commit()
+
+// ✅ Good: I/O outside transaction
+user, _ := lpg.SelectGenericSingle[User](tx, "SELECT * FROM users WHERE id = $1", id)
+tx.Commit()  // Done with DB
+
+// Now do I/O
+resp, _ := http.Get("https://api.example.com/validate")
+```
+
+### 4. Use Appropriate Isolation Levels
+
+```go
+// For reports (read-only, no exact consistency needed)
+tx, _ := db.BeginTx(ctx, &sql.TxOptions{
+    Isolation: sql.LevelReadCommitted,
+    ReadOnly:  true,
+})
+
+// For financial transactions (strict consistency)
+tx, _ := db.BeginTx(ctx, &sql.TxOptions{
+    Isolation: sql.LevelSerializable,
+})
+```
+
+### 5. Add Timeouts
+
+```go
+// ✅ Always set a timeout
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+
+tx, _ := db.BeginTx(ctx, nil)
+```
+
+## Troubleshooting
+
+### "sql: transaction has already been committed or rolled back"
+
+**Cause:** Trying to use transaction after commit/rollback
+
+```go
+// ❌ Bad
+tx, _ := db.Begin()
+tx.Commit()
+lpg.InsertGeneric(tx, &user)  // Error!
+```
+
+### "pq: deadlock detected"
+
+**Cause:** Two transactions waiting for each other
+
+**Solution:**
+- Access tables in same order
+- Use lower isolation levels
+- Keep transactions short
+
+### "too many connections"
+
+**Cause:** Transactions not being closed
+
+**Solution:**
+```go
+// ✅ Always use defer
+defer tx.Rollback()
+```
+
+## Summary
+
+| Pattern | Code | Use Case |
+|---------|------|----------|
+| **Basic** | `defer tx.Rollback()` | All transactions |
+| **Read-Only** | `ReadOnly: true` | SELECT-only operations |
+| **Timeout** | `WithTimeout(ctx, 30*time.Second)` | Prevent hung transactions |
+| **Isolation** | `Isolation: LevelSerializable` | Critical consistency needs |
+| **Savepoint** | `SAVEPOINT sp1` | Partial rollbacks |
+
+## Next Steps
+
+- [PostgreSQL Guide](/guides/postgresql) - PostgreSQL-specific transaction features
+- [MySQL Guide](/guides/mysql) - MySQL-specific transaction features
+- [Examples](/examples/basic-crud) - See transactions in action

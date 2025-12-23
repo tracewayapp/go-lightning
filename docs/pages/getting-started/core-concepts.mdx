@@ -1,0 +1,432 @@
+# Core Concepts
+
+Understanding these core concepts will help you use go-lightning effectively.
+
+## Registration System
+
+### Why Registration is Required
+
+Before using a struct type with generic operations, you must register it with `Register[T]()`. This is a one-time operation that builds metadata used for all subsequent database operations.
+
+```go
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+    Email     string
+}
+
+func init() {
+    lpg.Register[User]()  // Register during package initialization
+}
+```
+
+### What Happens During Registration
+
+When you call `Register[User]()`, go-lightning:
+
+1. **Inspects the struct** using reflection to find all fields
+2. **Maps field names to column names** using the naming strategy
+3. **Detects the ID field** to enable special handling for auto-increment
+4. **Builds query templates** for INSERT and UPDATE operations
+5. **Stores metadata** in a global `FieldMap` for fast lookups
+
+### The FieldMap Structure
+
+```go
+type FieldMap struct {
+    ColumnsMap    map[string]int  // column name → struct field index
+    ColumnKeys    []string         // all column names in order
+    HasIntId      bool             // true if Id field is int type
+    InsertQuery   string           // pre-built INSERT template
+    UpdateQuery   string           // pre-built UPDATE template
+    InsertColumns []string         // columns for INSERT (excludes auto-increment id)
+}
+```
+
+**Example for User struct:**
+
+```go
+FieldMap{
+    ColumnsMap: {
+        "id": 0,
+        "first_name": 1,
+        "last_name": 2,
+        "email": 3,
+    },
+    ColumnKeys: ["id", "first_name", "last_name", "email"],
+    HasIntId: true,
+    InsertQuery: "INSERT INTO users (first_name, last_name, email) VALUES ($1, $2, $3) RETURNING id",
+    UpdateQuery: "UPDATE users SET first_name = $1, last_name = $2, email = $3",
+    InsertColumns: ["first_name", "last_name", "email"],
+}
+```
+
+### When to Register
+
+**Best Practice**: Register in the `init()` function of the package that defines the struct:
+
+```go
+// models/user.go
+package models
+
+import "github.com/tracewayapp/go-lightning/lpg"
+
+type User struct {
+    Id        int
+    FirstName string
+}
+
+func init() {
+    lpg.Register[User]()
+}
+```
+
+**Why `init()`?**
+- Runs automatically when the package is imported
+- Happens once, before `main()`
+- No risk of forgetting to register
+
+**What if I forget to register?**
+
+You'll get a helpful panic message:
+
+```
+Non registered model User used. Please call `var _ = Register[User]()` after you define User
+```
+
+## Naming Strategies
+
+Naming strategies control how Go struct names map to database table and column names.
+
+### Default Naming Strategy
+
+go-lightning uses `DefaultDbNamingStrategy` which follows these rules:
+
+#### Table Names
+
+1. Convert struct name from CamelCase to snake_case
+2. Add `s` suffix for pluralization
+
+**Examples:**
+- `User` → `users`
+- `UserProfile` → `user_profiles`
+- `OrderHistory` → `order_historys` (simple suffix, not smart pluralization)
+
+#### Column Names
+
+1. Convert field name from CamelCase to snake_case
+
+**Examples:**
+- `Id` → `id`
+- `FirstName` → `first_name`
+- `CreatedAt` → `created_at`
+- `IsActive` → `is_active`
+
+### DbNamingStrategy Interface
+
+```go
+type DbNamingStrategy interface {
+    GetTableNameFromStructName(string) string
+    GetColumnNameFromStructName(string) string
+}
+```
+
+### Custom Naming Strategies
+
+You can implement your own naming strategy for different conventions:
+
+```go
+// Example: Prefix all tables with "app_"
+type PrefixedNamingStrategy struct {
+    prefix string
+}
+
+func (s PrefixedNamingStrategy) GetTableNameFromStructName(structName string) string {
+    tableName := toSnakeCase(structName)
+    return s.prefix + tableName + "s"
+}
+
+func (s PrefixedNamingStrategy) GetColumnNameFromStructName(fieldName string) string {
+    return toSnakeCase(fieldName)
+}
+
+// Usage
+lpg.Register[User](PrefixedNamingStrategy{prefix: "app_"}, lpg.PgInsertUpdateQueryGenerator{})
+// User → app_users
+```
+
+For more details, see [Naming Strategies Guide](/guides/naming-strategies).
+
+## ID Field Handling
+
+go-lightning provides special handling for primary key `Id` fields based on their type.
+
+### Integer ID (Auto-Increment)
+
+If your struct has an `Id` field of type `int`:
+
+```go
+type User struct {
+    Id   int     // Auto-increment detected
+    Name string
+}
+```
+
+**Behavior:**
+- **INSERT**: `Id` field is **excluded** from the INSERT statement (database generates it)
+- **PostgreSQL**: Uses `RETURNING id` clause to retrieve the generated ID
+- **MySQL**: Uses `LastInsertId()` to retrieve the generated ID
+- **UPDATE**: `Id` field **is included** (but typically not in SET clause)
+
+**SQL Generated (PostgreSQL):**
+```sql
+INSERT INTO users (name) VALUES ($1) RETURNING id
+```
+
+### String ID (UUID)
+
+If your struct has an `Id` field of type `string`:
+
+```go
+type Entity struct {
+    Id          string  // UUID will be generated
+    Name        string
+    Description string
+}
+```
+
+**Use `InsertGenericUuid`:**
+
+```go
+uuid, err := lpg.InsertGenericUuid(tx, &entity)
+// uuid is the generated UUID string
+// entity.Id is now set to the generated UUID
+```
+
+**Or use `InsertGenericExistingUuid` if you already have a UUID:**
+
+```go
+entity.Id = uuid.New().String()  // Set UUID first
+err := lpg.InsertGenericExistingUuid(tx, &entity)
+```
+
+### No ID Field
+
+If your struct doesn't have an `Id` field, all fields are treated equally:
+
+```go
+type ActivityLog struct {
+    Timestamp time.Time
+    Action    string
+    UserId    int
+}
+```
+
+All fields will be included in INSERT operations.
+
+## Generic vs Manual Operations
+
+go-lightning offers two approaches for database operations:
+
+### Generic Operations
+
+**Automatic** struct-to-row mapping. Requires registration.
+
+```go
+// Automatic mapping
+users, err := lpg.SelectGeneric[User](tx, "SELECT * FROM users")
+```
+
+**Pros:**
+- No manual `Scan()` calls
+- Type-safe with compile-time checking
+- Less boilerplate code
+
+**Cons:**
+- Requires registration
+- All SELECT columns must exist in struct
+- Less flexible for complex queries
+
+**Use when:**
+- Standard CRUD operations
+- Struct fields match query columns
+- You want minimal boilerplate
+
+### Manual Operations
+
+**Custom** mapping function required. No registration needed.
+
+```go
+func mapUser(rows *sql.Rows, user *User) error {
+    return rows.Scan(&user.Id, &user.FirstName, &user.LastName)
+}
+
+users, err := lpg.SelectMultiple[User](tx, mapUser, "SELECT id, first_name, last_name FROM users")
+```
+
+**Pros:**
+- Full control over scanning
+- Can select subset of columns
+- Can map to different field names
+- No registration required
+
+**Cons:**
+- Manual `Scan()` implementation
+- More boilerplate
+- Easier to make mistakes
+
+**Use when:**
+- Complex queries with joins
+- Selecting only specific columns
+- Mapping to DTOs or view models
+- Aggregations and computed fields
+
+## Transaction-Based Operations
+
+All go-lightning operations require a `*sql.Tx` (transaction) parameter, not `*sql.DB`.
+
+### Why Transactions Only?
+
+1. **Explicit control** - You decide when to commit or rollback
+2. **Consistency** - Multiple operations in one transaction
+3. **Safety** - Automatic rollback on errors if using `defer`
+
+### Transaction Pattern
+
+```go
+// Begin transaction
+tx, err := db.Begin()
+if err != nil {
+    return err
+}
+defer tx.Rollback()  // Rollback if not committed
+
+// Perform operations
+id, err := lpg.InsertGeneric(tx, &user)
+if err != nil {
+    return err  // Rollback happens via defer
+}
+
+// Commit on success
+if err := tx.Commit(); err != nil {
+    return err
+}
+```
+
+### Deferred Rollback Pattern
+
+The `defer tx.Rollback()` pattern is safe and recommended:
+
+- If `Commit()` succeeds, `Rollback()` is a no-op (does nothing)
+- If an error occurs before `Commit()`, changes are rolled back
+- Ensures cleanup even if function panics
+
+For more details, see [Transactions Guide](/guides/transactions).
+
+## Performance Characteristics
+
+### Registration (One-Time Cost)
+
+**When**: At package initialization or first `Register[]` call
+
+**What happens**:
+- Reflection inspects struct fields
+- Query templates are built
+- Metadata is cached in `FieldMap`
+
+**Cost**: Milliseconds per type, happens once
+
+### Query Execution (Runtime)
+
+**What happens**:
+- Lookup `FieldMap` from global cache (O(1) map lookup)
+- Use pre-built query template
+- Build pointers to struct fields using cached indexes
+- Execute query and scan
+
+**Cost**: Comparable to hand-written `database/sql` code
+
+**No runtime reflection**: Field positions are pre-calculated during registration.
+
+## Type Safety with Generics
+
+go-lightning leverages Go 1.18+ generics for compile-time type safety:
+
+```go
+// ✅ Type-safe: Returns []*User
+users, err := lpg.SelectGeneric[User](tx, query)
+
+// ✅ Compiler knows this is *User
+user, err := lpg.SelectGenericSingle[User](tx, query, args...)
+
+// ✅ Type parameter ensures correct struct type
+id, err := lpg.InsertGeneric(tx, &user)  // user must be *User
+```
+
+**Benefits:**
+- IDE autocomplete for returned types
+- Compile-time error if wrong type used
+- No type assertions needed
+- Refactoring safety
+
+## Validation and Error Handling
+
+### Column Validation
+
+go-lightning validates that all columns returned by SELECT queries exist in the registered struct:
+
+```go
+// Struct has: Id, FirstName, LastName, Email
+users, err := lpg.SelectGeneric[User](tx, "SELECT *, created_at FROM users")
+// Panic: invalid column 'created_at' is not found in the struct
+```
+
+**Solution**: Only select columns that exist in your struct:
+
+```go
+users, err := lpg.SelectGeneric[User](tx,
+    "SELECT id, first_name, last_name, email FROM users")
+```
+
+### No Rows vs Errors
+
+go-lightning distinguishes between "no rows found" and actual errors:
+
+```go
+user, err := lpg.SelectGenericSingle[User](tx, "SELECT * FROM users WHERE id = $1", 999)
+// If no rows: user == nil, err == nil
+// If error: user == nil, err != nil
+```
+
+**Always check both:**
+
+```go
+if err != nil {
+    return err  // Actual error
+}
+if user == nil {
+    return errors.New("user not found")  // No rows
+}
+```
+
+## Summary
+
+| Concept | Key Points |
+|---------|-----------|
+| **Registration** | Required before generic operations; happens once in `init()` |
+| **FieldMap** | Pre-built metadata for fast query execution |
+| **Naming Strategy** | Converts Go names to database names (customizable) |
+| **ID Handling** | Special behavior for int (auto-increment) and string (UUID) |
+| **Generic vs Manual** | Generic = automatic mapping; Manual = custom control |
+| **Transactions** | All operations require `*sql.Tx` for safety |
+| **Performance** | Reflection at init time, zero runtime reflection |
+| **Type Safety** | Generics provide compile-time checking |
+
+## Next Steps
+
+- [PostgreSQL Guide](/guides/postgresql) - PostgreSQL-specific features
+- [MySQL Guide](/guides/mysql) - MySQL-specific features
+- [Registration Guide](/guides/registration) - Deep dive into registration
+- [Naming Strategies](/guides/naming-strategies) - Custom naming conventions
+- [API Reference](/api-reference/core/interfaces) - Complete interface documentation

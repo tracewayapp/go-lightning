@@ -1,0 +1,61 @@
+# Custom Naming Strategy Example
+
+Implementing custom naming strategies for different table/column conventions.
+
+## Example: Prefix Tables
+
+```go
+package main
+
+import (
+    "strings"
+    "unicode"
+
+    golightning "github.com/tracewayapp/go-lightning"
+    "github.com/tracewayapp/go-lightning/lpg"
+)
+
+type PrefixedNamingStrategy struct {
+    Prefix string
+}
+
+func (s PrefixedNamingStrategy) GetTableNameFromStructName(structName string) string {
+    return s.Prefix + toSnakeCase(structName) + "s"
+}
+
+func (s PrefixedNamingStrategy) GetColumnNameFromStructName(fieldName string) string {
+    return toSnakeCase(fieldName)
+}
+
+func toSnakeCase(s string) string {
+    var result []rune
+    for i, r := range s {
+        if unicode.IsUpper(r) {
+            if i > 0 {
+                result = append(result, '_')
+            }
+            result = append(result, unicode.ToLower(r))
+        } else {
+            result = append(result, r)
+        }
+    }
+    return string(result)
+}
+
+type User struct {
+    Id   int
+    Name string
+}
+
+func init() {
+    golightning.Register[User](
+        PrefixedNamingStrategy{Prefix: "app_"},
+        lpg.PgInsertUpdateQueryGenerator{},
+    )
+}
+
+// User → app_users table
+// Name → name column
+```
+
+See [Naming Strategies Guide](/guides/naming-strategies) for more examples.

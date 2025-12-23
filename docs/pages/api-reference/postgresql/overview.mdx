@@ -1,0 +1,46 @@
+# PostgreSQL Module Overview
+
+The `lpg` package provides PostgreSQL-specific implementations of go-lightning.
+
+## Installation
+
+```bash
+go get github.com/tracewayapp/go-lightning/lpg
+```
+
+## Import
+
+```go
+import "github.com/tracewayapp/go-lightning/lpg"
+```
+
+## Key Features
+
+- **Parameter placeholders**: `$1, $2, $3...`
+- **INSERT with RETURNING**: Uses `RETURNING id` clause
+- **UUID support**: Built-in UUID generation
+- **Parameter renumbering**: Automatic `$N` adjustment in WHERE clauses
+
+## Quick Reference
+
+```go
+// Registration
+lpg.Register[User]()
+
+// SELECT operations
+users, err := lpg.SelectGeneric[User](tx, query, args...)
+user, err := lpg.SelectGenericSingle[User](tx, query, args...)
+
+// INSERT operations
+id, err := lpg.InsertGeneric(tx, &user)
+uuid, err := lpg.InsertGenericUuid(tx, &entity)
+
+// UPDATE/DELETE
+err := lpg.UpdateGeneric(tx, &user, where, args...)
+err := lpg.Delete(tx, query, args...)
+
+// Helpers
+placeholders := lpg.JoinStringForIn(offset, params)
+```
+
+See [PostgreSQL Guide](/guides/postgresql) for comprehensive documentation.

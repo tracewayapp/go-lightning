@@ -1,0 +1,501 @@
+# PostgreSQL Guide
+
+This guide covers PostgreSQL-specific features and best practices when using go-lightning with PostgreSQL.
+
+## Installation
+
+```bash
+go get github.com/tracewayapp/go-lightning/lpg
+go get github.com/jackc/pgx/v5/stdlib
+```
+
+## Basic Setup
+
+### Import and Driver Registration
+
+```go
+package main
+
+import (
+    "database/sql"
+
+    _ "github.com/jackc/pgx/v5/stdlib"  // PostgreSQL driver
+    "github.com/tracewayapp/go-lightning/lpg"
+
+    "yourproject/models"
+)
+```
+
+### Connection String
+
+```go
+db, err := sql.Open("pgx", "postgres://user:password@localhost:5432/dbname?sslmode=disable")
+if err != nil {
+    log.Fatal(err)
+}
+defer db.Close()
+```
+
+**Common parameters:**
+- `sslmode=disable` - Disable SSL (development only)
+- `sslmode=require` - Require SSL (production)
+- `pool_max_conns=10` - Maximum connections
+- `pool_min_conns=2` - Minimum connections
+
+## Parameter Placeholders
+
+PostgreSQL uses **numbered placeholders**: `$1`, `$2`, `$3`, etc.
+
+```go
+// Single parameter
+user, err := lpg.SelectGenericSingle[User](tx,
+    "SELECT * FROM users WHERE id = $1", userId)
+
+// Multiple parameters
+users, err := lpg.SelectGeneric[User](tx,
+    "SELECT * FROM users WHERE age > $1 AND city = $2", 25, "New York")
+
+// IN clause
+ids := []int{1, 2, 3}
+query := fmt.Sprintf("SELECT * FROM users WHERE id IN (%s)",
+    lpg.JoinForIn(ids))
+users, err := lpg.SelectGeneric[User](tx, query)
+```
+
+## INSERT with RETURNING
+
+PostgreSQL's `lpg.InsertGeneric` uses the `RETURNING id` clause to retrieve auto-generated IDs:
+
+```go
+user := &User{
+    FirstName: "John",
+    LastName:  "Doe",
+    Email:     "john@example.com",
+}
+
+id, err := lpg.InsertGeneric(tx, user)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Inserted user with ID: %d\n", id)
+```
+
+**Generated SQL:**
+```sql
+INSERT INTO users (first_name, last_name, email)
+VALUES ($1, $2, $3)
+RETURNING id
+```
+
+**Why this matters:**
+- PostgreSQL doesn't support `LastInsertId()` like MySQL
+- `RETURNING id` retrieves the generated ID in a single roundtrip
+- More efficient than a separate SELECT query
+
+## UUID Support
+
+PostgreSQL excels at UUID primary keys. go-lightning provides built-in UUID support:
+
+### Auto-Generated UUID
+
+```go
+type Entity struct {
+    Id          string  // UUID will be auto-generated
+    Name        string
+    Description string
+}
+
+func init() {
+    lpg.Register[Entity]()
+}
+
+// Usage
+entity := &Entity{
+    Name:        "My Entity",
+    Description: "Description here",
+}
+
+uuid, err := lpg.InsertGenericUuid(tx, entity)
+if err != nil {
+    log.Fatal(err)
+}
+
+// entity.Id is now set to the generated UUID
+fmt.Printf("Generated UUID: %s\n", uuid)
+fmt.Printf("Entity ID: %s\n", entity.Id)
+```
+
+### Pre-Generated UUID
+
+If you generate the UUID yourself:
+
+```go
+import "github.com/google/uuid"
+
+entity := &Entity{
+    Id:          uuid.New().String(),
+    Name:        "My Entity",
+    Description: "Description here",
+}
+
+err := lpg.InsertGenericExistingUuid(tx, entity)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### Database Schema for UUID
+
+```sql
+CREATE TABLE entities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    description TEXT
+);
+```
+
+Or use extension for older PostgreSQL versions:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TABLE entities (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    description TEXT
+);
+```
+
+## Parameter Offset Handling in WHERE Clauses
+
+go-lightning automatically renumbers `$N` placeholders in WHERE clauses for `UpdateGeneric`:
+
+```go
+user := &User{
+    Id:        1,
+    FirstName: "Jane",
+    LastName:  "Doe",
+    Email:     "jane@example.com",
+}
+
+// UpdateGeneric automatically adjusts parameter numbers
+err := lpg.UpdateGeneric(tx, user, "id = $1", user.Id)
+```
+
+**What happens internally:**
+
+1. UPDATE query uses `$1, $2, $3` for struct fields
+2. WHERE clause parameter `$1` is **renumbered** to `$4`
+3. Final query: `UPDATE users SET first_name = $1, last_name = $2, email = $3 WHERE id = $4`
+
+**This allows intuitive WHERE clauses:**
+
+```go
+// Simple WHERE
+lpg.UpdateGeneric(tx, user, "id = $1", user.Id)
+
+// Complex WHERE
+lpg.UpdateGeneric(tx, user, "id = $1 AND organization_id = $2", userId, orgId)
+```
+
+**Without automatic renumbering, you'd need:**
+
+```go
+// This would be error-prone
+lpg.UpdateGeneric(tx, user, "id = $4 AND organization_id = $5", userId, orgId)
+//                                     ^^               ^^  <- Hard to track!
+```
+
+## Dynamic IN Clauses
+
+### For Integer IDs
+
+Use `JoinForIn` to build comma-separated lists:
+
+```go
+ids := []int{1, 2, 3, 4, 5}
+query := fmt.Sprintf("SELECT * FROM users WHERE id IN (%s)", lpg.JoinForIn(ids))
+users, err := lpg.SelectGeneric[User](tx, query)
+```
+
+**Output:** `SELECT * FROM users WHERE id IN (1,2,3,4,5)`
+
+### For Parameterized IN Clauses
+
+Use `JoinStringForIn` with parameter offset:
+
+```go
+usernames := []string{"alice", "bob", "charlie"}
+
+query := fmt.Sprintf("SELECT * FROM users WHERE username IN (%s)",
+    lpg.JoinStringForIn(0, usernames))
+
+users, err := lpg.SelectGeneric[User](tx, query, usernames...)
+```
+
+**Output:**
+- Query: `SELECT * FROM users WHERE username IN ($1,$2,$3)`
+- Args: `["alice", "bob", "charlie"]`
+
+**With offset (e.g., after other parameters):**
+
+```go
+age := 25
+usernames := []string{"alice", "bob"}
+
+query := fmt.Sprintf("SELECT * FROM users WHERE age > $1 AND username IN (%s)",
+    lpg.JoinStringForIn(1, usernames))  // offset=1 because $1 is used for age
+
+users, err := lpg.SelectGeneric[User](tx, query, age, usernames...)
+```
+
+**Output:**
+- Query: `SELECT * FROM users WHERE age > $1 AND username IN ($2,$3)`
+- Args: `[25, "alice", "bob"]`
+
+## Transaction Patterns
+
+### Basic Transaction
+
+```go
+tx, err := db.Begin()
+if err != nil {
+    return err
+}
+defer tx.Rollback()  // Safe even after Commit()
+
+// Operations
+id, err := lpg.InsertGeneric(tx, &user)
+if err != nil {
+    return err  // Rollback via defer
+}
+
+// Commit
+if err := tx.Commit(); err != nil {
+    return err
+}
+```
+
+### Transaction with Isolation Level
+
+```go
+tx, err := db.BeginTx(context.Background(), &sql.TxOptions{
+    Isolation: sql.LevelSerializable,
+})
+```
+
+Available levels:
+- `sql.LevelDefault` - Database default
+- `sql.LevelReadUncommitted`
+- `sql.LevelReadCommitted` - PostgreSQL default
+- `sql.LevelRepeatableRead`
+- `sql.LevelSerializable` - Strongest isolation
+
+## Best Practices
+
+### 1. Use Connection Pooling
+
+```go
+db.SetMaxOpenConns(25)
+db.SetMaxIdleConns(5)
+db.SetConnMaxLifetime(5 * time.Minute)
+```
+
+### 2. Always Use Transactions
+
+Even for single operations, transactions provide:
+- Consistency guarantees
+- Explicit commit/rollback control
+- Better error handling
+
+### 3. Prefer UUID for Distributed Systems
+
+```go
+type User struct {
+    Id    string  // UUID
+    Name  string
+    Email string
+}
+```
+
+**Advantages:**
+- No coordination needed across databases
+- Merge-friendly (no ID conflicts)
+- Can generate client-side
+
+### 4. Use JSONB for Flexible Data
+
+PostgreSQL's JSONB type works well with go-lightning:
+
+```go
+type Product struct {
+    Id         int
+    Name       string
+    Attributes string  // JSON string
+}
+
+// In your application
+import "encoding/json"
+
+attrs := map[string]interface{}{
+    "color": "red",
+    "size":  "large",
+}
+attrsJSON, _ := json.Marshal(attrs)
+
+product := &Product{
+    Name:       "T-Shirt",
+    Attributes: string(attrsJSON),
+}
+```
+
+**Schema:**
+```sql
+CREATE TABLE products (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    attributes JSONB
+);
+```
+
+### 5. Use Prepared Statements for Repeated Queries
+
+While go-lightning doesn't expose prepared statements directly, the underlying `database/sql` driver handles this:
+
+```go
+// The driver automatically prepares this query
+for _, email := range emails {
+    user, _ := lpg.SelectGenericSingle[User](tx,
+        "SELECT * FROM users WHERE email = $1", email)
+}
+```
+
+## PostgreSQL-Specific Features
+
+### SERIAL vs IDENTITY
+
+Modern PostgreSQL (10+) prefers `IDENTITY`:
+
+```sql
+-- Old way (SERIAL)
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name TEXT
+);
+
+-- New way (IDENTITY) - Recommended
+CREATE TABLE users (
+    id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name TEXT
+);
+```
+
+Both work with go-lightning's auto-increment detection.
+
+### Array Types
+
+PostgreSQL arrays can be used with custom `mapLine` functions:
+
+```go
+type User struct {
+    Id    int
+    Name  string
+    Tags  []string  // PostgreSQL array
+}
+
+// Use manual operations for arrays
+func mapUser(rows *sql.Rows, user *User) error {
+    return rows.Scan(&user.Id, &user.Name, pq.Array(&user.Tags))
+}
+
+users, err := lpg.SelectMultiple[User](tx, mapUser,
+    "SELECT id, name, tags FROM users")
+```
+
+### Full-Text Search
+
+```go
+query := `
+    SELECT * FROM articles
+    WHERE to_tsvector('english', title || ' ' || content) @@ plainto_tsquery($1)
+`
+articles, err := lpg.SelectGeneric[Article](tx, query, "golang database")
+```
+
+## Common Patterns
+
+### Upsert (INSERT ... ON CONFLICT)
+
+```go
+query := `
+    INSERT INTO users (id, name, email)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (email)
+    DO UPDATE SET name = EXCLUDED.name
+    RETURNING id
+`
+id, err := lpg.Insert(tx, query, user.Id, user.Name, user.Email)
+```
+
+### Bulk Insert
+
+```go
+query := `
+    INSERT INTO users (first_name, last_name, email)
+    VALUES ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)
+    RETURNING id
+`
+rows, err := tx.Query(query,
+    "John", "Doe", "john@example.com",
+    "Jane", "Doe", "jane@example.com",
+    "Bob", "Smith", "bob@example.com",
+)
+// Scan IDs...
+```
+
+### Soft Deletes
+
+```go
+type User struct {
+    Id        int
+    Name      string
+    DeletedAt *time.Time  // NULL when not deleted
+}
+
+// Soft delete
+err := lpg.Update(tx, "UPDATE users SET deleted_at = NOW() WHERE id = $1", userId)
+
+// Query only active users
+users, err := lpg.SelectGeneric[User](tx,
+    "SELECT * FROM users WHERE deleted_at IS NULL")
+```
+
+## Troubleshooting
+
+### "pq: sorry, too many clients already"
+
+Reduce connection pool size:
+
+```go
+db.SetMaxOpenConns(10)
+```
+
+### "pq: SSL is not enabled on the server"
+
+Either enable SSL on server or disable in connection string:
+
+```go
+"postgres://user:pass@host/db?sslmode=disable"
+```
+
+### "pq: column 'X' does not exist"
+
+Check naming strategy mapping:
+- Go: `CreatedAt` → Database: `created_at`
+- Ensure struct fields match database columns
+
+## Next Steps
+
+- [Transactions Guide](/guides/transactions) - Advanced transaction patterns
+- [UUID Entities Example](/examples/uuid-entities) - Complete UUID example
+- [PostgreSQL API Reference](/api-reference/postgresql/crud-operations) - Full API documentation

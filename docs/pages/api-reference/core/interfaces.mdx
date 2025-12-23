@@ -1,0 +1,342 @@
+# Core Interfaces
+
+Documentation for core interfaces in the go-lightning library.
+
+## DbNamingStrategy
+
+Controls how Go struct and field names are converted to database table and column names.
+
+### Interface Definition
+
+```go
+type DbNamingStrategy interface {
+    GetTableNameFromStructName(string) string
+    GetColumnNameFromStructName(string) string
+}
+```
+
+### Methods
+
+#### GetTableNameFromStructName
+
+Converts a Go struct name to a database table name.
+
+**Signature:**
+```go
+GetTableNameFromStructName(structName string) string
+```
+
+**Parameters:**
+- `structName` - The name of the Go struct (e.g., `"UserProfile"`)
+
+**Returns:**
+- Table name for the database (e.g., `"user_profiles"`)
+
+**Example:**
+```go
+strategy := DefaultDbNamingStrategy{}
+tableName := strategy.GetTableNameFromStructName("User")  // Returns "users"
+```
+
+#### GetColumnNameFromStructName
+
+Converts a Go field name to a database column name.
+
+**Signature:**
+```go
+GetColumnNameFromStructName(fieldName string) string
+```
+
+**Parameters:**
+- `fieldName` - The name of the struct field (e.g., `"FirstName"`)
+
+**Returns:**
+- Column name for the database (e.g., `"first_name"`)
+
+**Example:**
+```go
+strategy := DefaultDbNamingStrategy{}
+columnName := strategy.GetColumnNameFromStructName("FirstName")  // Returns "first_name"
+```
+
+### Default Implementation
+
+```go
+type DefaultDbNamingStrategy struct{}
+```
+
+**Conversion rules:**
+- **Table names**: CamelCase → snake_case + 's' suffix
+  - `User` → `users`
+  - `UserProfile` → `user_profiles`
+
+- **Column names**: CamelCase → snake_case
+  - `FirstName` → `first_name`
+  - `EmailAddress` → `email_address`
+
+**Example:**
+```go
+import "github.com/tracewayapp/go-lightning"
+
+strategy := lightning.DefaultDbNamingStrategy{}
+```
+
+### See Also
+
+- [Naming Strategies Guide](/guides/naming-strategies) - Comprehensive guide with custom examples
+- [Registration Guide](/guides/registration) - How naming strategies are used
+
+---
+
+## InsertUpdateQueryGenerator
+
+Generates database-specific INSERT and UPDATE query templates.
+
+### Interface Definition
+
+```go
+type InsertUpdateQueryGenerator interface {
+    GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string)
+    GenerateUpdateQuery(tableName string, columnKeys []string) string
+}
+```
+
+### Methods
+
+#### GenerateInsertQuery
+
+Generates an INSERT query template for the given table and columns.
+
+**Signature:**
+```go
+GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string)
+```
+
+**Parameters:**
+- `tableName` - Database table name
+- `columnKeys` - All column names from the struct
+- `hasIntId` - Whether the struct has an integer `Id` field
+
+**Returns:**
+- `string` - INSERT query template
+- `[]string` - List of columns to include in INSERT (may exclude auto-increment ID)
+
+**PostgreSQL Example:**
+```go
+generator := PgInsertUpdateQueryGenerator{}
+query, cols := generator.GenerateInsertQuery("users", []string{"id", "name", "email"}, true)
+// query: "INSERT INTO users (id, name, email) VALUES (DEFAULT, $1, $2) RETURNING id"
+// cols: ["name", "email"]
+```
+
+**MySQL Example:**
+```go
+generator := MySqlInsertUpdateQueryGenerator{}
+query, cols := generator.GenerateInsertQuery("users", []string{"id", "name", "email"}, true)
+// query: "INSERT INTO users (id, name, email) VALUES (NULL, ?, ?)"
+// cols: ["name", "email"]
+```
+
+#### GenerateUpdateQuery
+
+Generates an UPDATE query template (without WHERE clause).
+
+**Signature:**
+```go
+GenerateUpdateQuery(tableName string, columnKeys []string) string
+```
+
+**Parameters:**
+- `tableName` - Database table name
+- `columnKeys` - All column names to update
+
+**Returns:**
+- UPDATE query template (WHERE clause is appended at call time)
+
+**PostgreSQL Example:**
+```go
+generator := PgInsertUpdateQueryGenerator{}
+query := generator.GenerateUpdateQuery("users", []string{"id", "name", "email"})
+// Returns: "UPDATE users SET id = $1, name = $2, email = $3 WHERE "
+```
+
+**MySQL Example:**
+```go
+generator := MySqlInsertUpdateQueryGenerator{}
+query := generator.GenerateUpdateQuery("users", []string{"id", "name", "email"})
+// Returns: "UPDATE users SET id = ?, name = ?, email = ? WHERE "
+```
+
+### Database Implementations
+
+#### PostgreSQL: PgInsertUpdateQueryGenerator
+
+Available in `github.com/tracewayapp/go-lightning/lpg`
+
+**Features:**
+- Uses `$1, $2, $3` parameter placeholders
+- INSERT uses `DEFAULT` for auto-increment fields
+- Includes `RETURNING id` clause
+
+```go
+import "github.com/tracewayapp/go-lightning/lpg"
+
+generator := lpg.PgInsertUpdateQueryGenerator{}
+```
+
+#### MySQL: MySqlInsertUpdateQueryGenerator
+
+Available in `github.com/tracewayapp/go-lightning/lmy`
+
+**Features:**
+- Uses `?` parameter placeholders
+- INSERT uses `NULL` for auto-increment fields
+- No RETURNING clause (uses `LastInsertId()`)
+
+```go
+import "github.com/tracewayapp/go-lightning/lmy"
+
+generator := lmy.MySqlInsertUpdateQueryGenerator{}
+```
+
+### See Also
+
+- [PostgreSQL Guide](/guides/postgresql) - PostgreSQL-specific features
+- [MySQL Guide](/guides/mysql) - MySQL-specific features
+- [Registration Guide](/guides/registration) - How query generators are used
+
+---
+
+## FieldMap
+
+Pre-computed metadata about a registered struct type, used for efficient query execution.
+
+### Structure Definition
+
+```go
+type FieldMap struct {
+    ColumnsMap    map[string]int  // Column name → struct field index
+    ColumnKeys    []string         // Ordered list of all column names
+    HasIntId      bool             // True if struct has integer Id field
+    InsertQuery   string           // Pre-built INSERT query template
+    UpdateQuery   string           // Pre-built UPDATE query template
+    InsertColumns []string         // Columns for INSERT (excludes auto-increment id)
+}
+```
+
+### Fields
+
+#### ColumnsMap
+
+Maps column names to struct field indices for fast lookups.
+
+**Type:** `map[string]int`
+
+**Example:**
+```go
+ColumnsMap: {
+    "id":         0,
+    "first_name": 1,
+    "last_name":  2,
+    "email":      3,
+}
+```
+
+**Used for:**
+- Validating SELECT query columns
+- Building scan destination pointers in correct order
+
+#### ColumnKeys
+
+Ordered list of all column names.
+
+**Type:** `[]string`
+
+**Example:**
+```go
+ColumnKeys: ["id", "first_name", "last_name", "email"]
+```
+
+**Used for:**
+- Generating UPDATE SET clauses
+- Iterating fields in consistent order
+
+#### HasIntId
+
+Indicates whether the struct has an integer `Id` field for auto-increment handling.
+
+**Type:** `bool`
+
+**Example:**
+```go
+type User struct {
+    Id int  // HasIntId = true
+}
+
+type Entity struct {
+    Id string  // HasIntId = false (UUID)
+}
+```
+
+#### InsertQuery
+
+Pre-built INSERT query template.
+
+**Type:** `string`
+
+**Example (PostgreSQL):**
+```go
+InsertQuery: "INSERT INTO users (first_name, last_name, email) VALUES ($1, $2, $3) RETURNING id"
+```
+
+**Example (MySQL):**
+```go
+InsertQuery: "INSERT INTO users (id, first_name, last_name, email) VALUES (NULL, ?, ?, ?)"
+```
+
+#### UpdateQuery
+
+Pre-built UPDATE query template (without WHERE clause).
+
+**Type:** `string`
+
+**Example:**
+```go
+UpdateQuery: "UPDATE users SET first_name = $1, last_name = $2, email = $3 WHERE "
+```
+
+#### InsertColumns
+
+List of columns to include in INSERT operations (excludes auto-increment ID).
+
+**Type:** `[]string`
+
+**Example:**
+```go
+InsertColumns: ["first_name", "last_name", "email"]  // "id" excluded
+```
+
+### Retrieving FieldMap
+
+Use `GetFieldMap` to retrieve the FieldMap for a registered type:
+
+```go
+import (
+    "reflect"
+    golightning "github.com/tracewayapp/go-lightning"
+)
+
+userType := reflect.TypeOf(User{})
+fieldMap, err := golightning.GetFieldMap(userType)
+if err != nil {
+    log.Fatal("User not registered:", err)
+}
+
+fmt.Println("Columns:", fieldMap.ColumnKeys)
+fmt.Println("INSERT:", fieldMap.InsertQuery)
+```
+
+### See Also
+
+- [Registration Guide](/guides/registration) - Deep dive into FieldMap creation
+- [Core Concepts](/getting-started/core-concepts) - Architecture overview

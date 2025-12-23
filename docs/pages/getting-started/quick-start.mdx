@@ -1,0 +1,330 @@
+# Quick Start
+
+This guide will walk you through creating your first application with go-lightning in just a few minutes.
+
+## Prerequisites
+
+- Go 1.25.1 or higher installed
+- PostgreSQL or MySQL database running
+- Basic familiarity with Go and SQL
+
+## Step 1: Install go-lightning
+
+For PostgreSQL:
+
+```bash
+go get github.com/tracewayapp/go-lightning/lpg
+go get github.com/jackc/pgx/v5/stdlib
+```
+
+For MySQL:
+
+```bash
+go get github.com/tracewayapp/go-lightning/lmy
+go get github.com/go-sql-driver/mysql
+```
+
+This guide uses PostgreSQL, but the process is similar for MySQL.
+
+## Step 2: Create Your Database Table
+
+Create a `users` table in your PostgreSQL database:
+
+```sql
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL
+);
+```
+
+## Step 3: Define Your Struct
+
+Create a `models` directory and define your `User` struct:
+
+**models/user.go**
+
+```go
+package models
+
+import "github.com/tracewayapp/go-lightning/lpg"
+
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+    Email     string
+}
+
+func init() {
+    lpg.Register[User]()  // Register the type for generic operations
+}
+```
+
+### Important Notes:
+
+- **Field names** follow Go naming conventions (CamelCase)
+- go-lightning automatically maps `FirstName` → `first_name`, `User` → `users`
+- **`init()` function** registers the type when the package is imported
+- The `Id` field (int type) is automatically handled for auto-increment
+
+## Step 4: Write Your Application
+
+**main.go**
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+
+    _ "github.com/jackc/pgx/v5/stdlib"
+    "github.com/tracewayapp/go-lightning/lpg"
+
+    "yourproject/models"  // This triggers init() and registration
+)
+
+func main() {
+    // Connect to database
+    db, err := sql.Open("pgx", "postgres://user:password@localhost:5432/dbname?sslmode=disable")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
+
+    // Begin transaction
+    tx, err := db.Begin()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer tx.Rollback()  // Rollback if not committed
+
+    // CREATE: Insert a new user
+    newUser := &models.User{
+        FirstName: "John",
+        LastName:  "Doe",
+        Email:     "john.doe@example.com",
+    }
+
+    id, err := lpg.InsertGeneric(tx, newUser)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Inserted user with ID: %d\n", id)
+
+    // READ: Select a single user
+    user, err := lpg.SelectGenericSingle[models.User](tx,
+        "SELECT * FROM users WHERE id = $1", id)
+    if err != nil {
+        log.Fatal(err)
+    }
+    if user != nil {
+        fmt.Printf("Found user: %s %s (%s)\n",
+            user.FirstName, user.LastName, user.Email)
+    }
+
+    // READ: Select multiple users
+    users, err := lpg.SelectGeneric[models.User](tx,
+        "SELECT * FROM users LIMIT 10")
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Found %d users\n", len(users))
+    for _, u := range users {
+        fmt.Printf(" - %d: %s %s\n", u.Id, u.FirstName, u.LastName)
+    }
+
+    // UPDATE: Modify a user
+    user.FirstName = "Jane"
+    err = lpg.UpdateGeneric(tx, user, "id = $1", user.Id)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println("Updated user name to Jane")
+
+    // DELETE: Remove a user
+    err = lpg.Delete(tx, "DELETE FROM users WHERE id = $1", id)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Deleted user %d\n", id)
+
+    // Commit transaction
+    if err := tx.Commit(); err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println("CRUD operations completed successfully!")
+}
+```
+
+## Step 5: Run Your Application
+
+```bash
+go run main.go
+```
+
+You should see output similar to:
+
+```
+Inserted user with ID: 1
+Found user: John Doe (john.doe@example.com)
+Found 1 users
+ - 1: John Doe
+Updated user name to Jane
+Deleted user 1
+CRUD operations completed successfully!
+```
+
+## What Just Happened?
+
+Let's break down the key parts:
+
+### 1. Registration
+
+```go
+func init() {
+    lpg.Register[User]()
+}
+```
+
+This builds metadata about your `User` struct:
+- Maps `FirstName` → `first_name` column
+- Maps `User` → `users` table
+- Detects `Id` as auto-increment field
+- Pre-builds INSERT and UPDATE queries
+
+### 2. InsertGeneric
+
+```go
+id, err := lpg.InsertGeneric(tx, newUser)
+```
+
+Executes: `INSERT INTO users (first_name, last_name, email) VALUES ($1, $2, $3) RETURNING id`
+
+The `Id` field is excluded because it's auto-increment.
+
+### 3. SelectGenericSingle
+
+```go
+user, err := lpg.SelectGenericSingle[models.User](tx,
+    "SELECT * FROM users WHERE id = $1", id)
+```
+
+- Executes your SQL query
+- Automatically scans columns into struct fields
+- Returns `nil, nil` (not error) if no rows found
+
+### 4. SelectGeneric
+
+```go
+users, err := lpg.SelectGeneric[models.User](tx,
+    "SELECT * FROM users LIMIT 10")
+```
+
+- Returns a slice of pointers: `[]*User`
+- Empty slice (not nil) if no results
+- All struct fields must match returned columns
+
+### 5. UpdateGeneric
+
+```go
+err = lpg.UpdateGeneric(tx, user, "id = $1", user.Id)
+```
+
+Executes: `UPDATE users SET first_name = $1, last_name = $2, email = $3 WHERE id = $4`
+
+**Important**: Updates **ALL** fields in the struct. WHERE clause is required.
+
+### 6. Delete
+
+```go
+err = lpg.Delete(tx, "DELETE FROM users WHERE id = $1", id)
+```
+
+Simple wrapper for DELETE queries. Not generic-specific.
+
+## MySQL Version
+
+The process is nearly identical for MySQL. Just change the imports and connection:
+
+```go
+import (
+    _ "github.com/go-sql-driver/mysql"
+    "github.com/tracewayapp/go-lightning/lmy"
+    "yourproject/models"
+)
+
+// Register in models/user.go
+func init() {
+    lmy.Register[User]()
+}
+
+// Connection string
+db, err := sql.Open("mysql", "user:password@tcp(localhost:3306)/dbname?parseTime=true")
+
+// Query placeholders use ? instead of $1
+user, err := lmy.SelectGenericSingle[models.User](tx,
+    "SELECT * FROM users WHERE id = ?", id)
+```
+
+## Common First-Time Mistakes
+
+### 1. Forgot to Register
+
+```go
+// ❌ This will panic
+id, err := lpg.InsertGeneric(tx, &user)  // Error: non-registered model
+
+// ✅ Always register first
+func init() {
+    lpg.Register[User]()
+}
+```
+
+### 2. Column Mismatch
+
+```go
+// ❌ SELECT returns columns not in struct
+users, err := lpg.SelectGeneric[models.User](tx,
+    "SELECT *, created_at FROM users")  // Panic: invalid column 'created_at'
+
+// ✅ Only select columns that exist in struct
+users, err := lpg.SelectGeneric[models.User](tx,
+    "SELECT id, first_name, last_name, email FROM users")
+```
+
+### 3. Empty WHERE Clause
+
+```go
+// ❌ UpdateGeneric requires WHERE clause
+err = lpg.UpdateGeneric(tx, user, "", nil)  // Error: where parameter not present
+
+// ✅ Always provide WHERE clause
+err = lpg.UpdateGeneric(tx, user, "id = $1", user.Id)
+```
+
+### 4. Using `*sql.DB` Instead of `*sql.Tx`
+
+```go
+// ❌ All operations require transactions
+id, err := lpg.InsertGeneric(db, &user)  // Won't compile
+
+// ✅ Use Begin() to create transaction
+tx, _ := db.Begin()
+id, err := lpg.InsertGeneric(tx, &user)
+tx.Commit()
+```
+
+## Next Steps
+
+Now that you've completed your first CRUD application:
+
+- [Core Concepts](/getting-started/core-concepts) - Understand the registration system, naming strategies, and architecture
+- [PostgreSQL Guide](/guides/postgresql) - Learn about UUID support, parameter handling, and PostgreSQL-specific features
+- [MySQL Guide](/guides/mysql) - Understand MySQL-specific behaviors
+- [API Reference](/api-reference/core/generic-operations) - Complete API documentation
+- [Examples](/examples/postgresql-complete) - More complete examples with error handling

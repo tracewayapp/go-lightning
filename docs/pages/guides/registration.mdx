@@ -1,0 +1,529 @@
+# Registration System
+
+A deep dive into go-lightning's registration system and how it enables type-safe database operations.
+
+## Why Registration Exists
+
+go-lightning uses a **one-time registration** pattern to build metadata about your struct types. This metadata enables:
+
+1. **Fast query execution** - Pre-built query templates avoid runtime string building
+2. **Type-safe mapping** - Compile-time verification of struct types
+3. **Zero runtime reflection** - Field positions calculated once, reused forever
+4. **Automatic naming** - Go names → database names without manual configuration
+
+## How to Register
+
+### Basic Registration
+
+Call `Register[T]()` in an `init()` function:
+
+```go
+package models
+
+import "github.com/tracewayapp/go-lightning/lpg"
+
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+    Email     string
+}
+
+func init() {
+    lpg.Register[User]()  // PostgreSQL
+    // or
+    // lmy.Register[User]()  // MySQL
+}
+```
+
+### Why `init()`?
+
+The `init()` function is the **recommended** place for registration:
+
+```go
+func init() {
+    lpg.Register[User]()
+}
+```
+
+**Benefits:**
+- Runs automatically when package is imported
+- Executes exactly once
+- Happens before `main()` starts
+- No risk of forgetting to register
+- Thread-safe initialization
+
+**Alternative (not recommended):**
+
+```go
+func main() {
+    lpg.Register[User]()  // Works but easy to forget
+    // ... rest of code
+}
+```
+
+### Multiple Struct Registration
+
+Register each struct type in its own package:
+
+```go
+// models/user.go
+package models
+
+import "github.com/tracewayapp/go-lightning/lpg"
+
+type User struct { /* ... */ }
+
+func init() {
+    lpg.Register[User]()
+}
+```
+
+```go
+// models/product.go
+package models
+
+type Product struct { /* ... */ }
+
+func init() {
+    lpg.Register[Product]()
+}
+```
+
+```go
+// main.go
+package main
+
+import (
+    "yourproject/models"  // All init() functions run automatically
+)
+```
+
+## What Happens During Registration
+
+When you call `Register[User]()`, go-lightning performs these steps:
+
+### 1. Reflect on Struct Type
+
+Uses Go's `reflect` package to inspect the struct:
+
+```go
+type User struct {
+    Id        int     // Field 0
+    FirstName string  // Field 1
+    LastName  string  // Field 2
+    Email     string  // Field 3
+}
+```
+
+**Extracted:**
+- Field names: `["Id", "FirstName", "LastName", "Email"]`
+- Field types: `[int, string, string, string]`
+- Field count: 4
+
+### 2. Apply Naming Strategy
+
+Converts Go names to database names using `DbNamingStrategy`:
+
+**Struct name → Table name:**
+```go
+"User" → "user" → "users"  // snake_case + plural
+```
+
+**Field names → Column names:**
+```go
+"Id"        → "id"
+"FirstName" → "first_name"
+"LastName"  → "last_name"
+"Email"     → "email"
+```
+
+### 3. Detect ID Field
+
+Checks if there's an `Id` field and its type:
+
+```go
+// Integer ID
+type User struct {
+    Id int  // hasIntId = true
+}
+
+// String ID (UUID)
+type Entity struct {
+    Id string  // hasIntId = false
+}
+
+// No ID field
+type Log struct {
+    Timestamp time.Time  // hasIntId = false
+    Message   string
+}
+```
+
+### 4. Build Query Templates
+
+Generates INSERT and UPDATE query templates:
+
+**INSERT query (PostgreSQL with int ID):**
+```sql
+INSERT INTO users (first_name, last_name, email) VALUES ($1, $2, $3) RETURNING id
+--                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^        ^^^^^^^^^^^
+--                 Excludes 'id' field                   Parameters: $1, $2, $3
+```
+
+**UPDATE query:**
+```sql
+UPDATE users SET first_name = $1, last_name = $2, email = $3 WHERE
+--               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--               All fields (WHERE clause added at call time)
+```
+
+### 5. Store FieldMap
+
+Saves all metadata in a global map for O(1) lookup:
+
+```go
+type FieldMap struct {
+    ColumnsMap    map[string]int  // "first_name" → 1
+    ColumnKeys    []string         // ["id", "first_name", ...]
+    HasIntId      bool             // true
+    InsertQuery   string           // "INSERT INTO users ..."
+    UpdateQuery   string           // "UPDATE users SET ..."
+    InsertColumns []string         // ["first_name", "last_name", "email"]
+}
+```
+
+## The FieldMap Structure
+
+### ColumnsMap
+
+Maps column names to struct field indices:
+
+```go
+ColumnsMap: {
+    "id":         0,
+    "first_name": 1,
+    "last_name":  2,
+    "email":      3,
+}
+```
+
+**Used for:**
+- Validating SELECT query columns
+- Building scan pointers in correct order
+
+### ColumnKeys
+
+Ordered list of all column names:
+
+```go
+ColumnKeys: ["id", "first_name", "last_name", "email"]
+```
+
+**Used for:**
+- Building UPDATE SET clauses
+- Iterating fields in order
+
+### HasIntId
+
+Boolean flag indicating integer ID field:
+
+```go
+HasIntId: true  // struct has `Id int` field
+```
+
+**Used for:**
+- INSERT query generation (exclude ID or not)
+- RETURNING clause (PostgreSQL)
+- LastInsertId handling (MySQL)
+
+### InsertQuery
+
+Pre-built INSERT query template:
+
+```go
+InsertQuery: "INSERT INTO users (first_name, last_name, email) VALUES ($1, $2, $3) RETURNING id"
+```
+
+**Used for:**
+- `InsertGeneric` operations
+- Avoids runtime string building
+
+### UpdateQuery
+
+Pre-built UPDATE query template (without WHERE):
+
+```go
+UpdateQuery: "UPDATE users SET first_name = $1, last_name = $2, email = $3 WHERE "
+```
+
+**Used for:**
+- `UpdateGeneric` operations
+- WHERE clause appended at call time
+
+### InsertColumns
+
+Column names for INSERT (excludes auto-increment ID):
+
+```go
+InsertColumns: ["first_name", "last_name", "email"]
+```
+
+**Used for:**
+- Determining which struct fields to include in INSERT
+- Building value list in correct order
+
+## Custom Query Generators
+
+For advanced use cases, implement `InsertUpdateQueryGenerator`:
+
+```go
+type InsertUpdateQueryGenerator interface {
+    GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string)
+    GenerateUpdateQuery(tableName string, columnKeys []string) string
+}
+```
+
+### Example: Custom INSERT Query
+
+```go
+type CustomQueryGenerator struct{}
+
+func (CustomQueryGenerator) GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string) {
+    // Example: Always include created_at timestamp
+    var sb strings.Builder
+    sb.WriteString("INSERT INTO ")
+    sb.WriteString(tableName)
+    sb.WriteString(" (")
+
+    insertColumns := []string{}
+    for i, col := range columnKeys {
+        if hasIntId && col == "id" {
+            continue  // Skip ID
+        }
+        if i > 0 {
+            sb.WriteString(", ")
+        }
+        sb.WriteString(col)
+        insertColumns = append(insertColumns, col)
+    }
+
+    sb.WriteString(", created_at) VALUES (")
+
+    // Add placeholders
+    for i := range insertColumns {
+        if i > 0 {
+            sb.WriteString(", ")
+        }
+        sb.WriteString(fmt.Sprintf("$%d", i+1))
+    }
+    sb.WriteString(", NOW()) RETURNING id")
+
+    return sb.String(), insertColumns
+}
+
+func (CustomQueryGenerator) GenerateUpdateQuery(tableName string, columnKeys []string) string {
+    // Standard UPDATE
+    var sb strings.Builder
+    sb.WriteString("UPDATE ")
+    sb.WriteString(tableName)
+    sb.WriteString(" SET ")
+
+    for i, col := range columnKeys {
+        if i > 0 {
+            sb.WriteString(", ")
+        }
+        sb.WriteString(fmt.Sprintf("%s = $%d", col, i+1))
+    }
+    sb.WriteString(", updated_at = NOW() WHERE ")
+
+    return sb.String()
+}
+
+// Usage
+import golightning "github.com/tracewayapp/go-lightning"
+
+func init() {
+    golightning.Register[User](
+        golightning.DefaultDbNamingStrategy{},
+        CustomQueryGenerator{},
+    )
+}
+```
+
+## Retrieving FieldMap
+
+Access the FieldMap for debugging or advanced use:
+
+```go
+import (
+    "reflect"
+    golightning "github.com/tracewayapp/go-lightning"
+)
+
+userType := reflect.TypeOf(User{})
+fieldMap, err := golightning.GetFieldMap(userType)
+if err != nil {
+    log.Fatal("User type not registered:", err)
+}
+
+fmt.Println("Table:", fieldMap.TableName)
+fmt.Println("Columns:", fieldMap.ColumnKeys)
+fmt.Println("INSERT:", fieldMap.InsertQuery)
+```
+
+## Registration Errors
+
+### Error: "Non registered model X used"
+
+**Cause:** Type was never registered
+
+**Solution:**
+
+```go
+// ❌ Forgot to register
+type User struct { /* ... */ }
+
+func main() {
+    id, err := lpg.InsertGeneric(tx, &User{})
+    // Panic: Non registered model User used
+}
+
+// ✅ Register in init()
+func init() {
+    lpg.Register[User]()
+}
+```
+
+### Error: "type already registered"
+
+**Cause:** `Register[T]()` called multiple times
+
+**Why it happens:**
+- Usually safe if in `init()` (runs only once)
+- Problem if called in regular function multiple times
+
+**Solution:**
+
+```go
+// ✅ Safe - init() runs once per package
+func init() {
+    lpg.Register[User]()
+}
+
+// ❌ Don't do this
+func Setup() {
+    lpg.Register[User]()  // Could be called multiple times
+}
+```
+
+## Performance Impact
+
+### Registration (One-Time)
+
+**Cost:**
+- Reflection: ~1-5 microseconds per struct
+- Query building: ~1-2 microseconds
+- Map storage: negligible
+
+**Total:** ~10 microseconds per type at startup
+
+**For 100 struct types:** ~1 millisecond total
+
+### Query Execution (Runtime)
+
+**Without go-lightning (manual SQL):**
+1. Hand-write query: `"SELECT * FROM users WHERE id = $1"`
+2. Execute query
+3. Manually scan: `rows.Scan(&id, &name, &email)`
+
+**With go-lightning:**
+1. Lookup FieldMap: O(1) map access (~10 nanoseconds)
+2. Use pre-built template
+3. Auto-scan using cached field positions
+
+**Performance:** Identical to manual SQL (within measurement error)
+
+## Best Practices
+
+### 1. Register in init()
+
+```go
+// ✅ Recommended
+func init() {
+    lpg.Register[User]()
+}
+
+// ❌ Avoid
+func main() {
+    lpg.Register[User]()
+}
+```
+
+### 2. One Struct Per File
+
+```go
+// user.go
+type User struct { /* ... */ }
+func init() { lpg.Register[User]() }
+
+// product.go
+type Product struct { /* ... */ }
+func init() { lpg.Register[Product]() }
+```
+
+### 3. Co-locate Models and Registration
+
+```go
+// models/user.go
+package models
+
+import "github.com/tracewayapp/go-lightning/lpg"
+
+type User struct {
+    Id   int
+    Name string
+}
+
+func init() {
+    lpg.Register[User]()  // Right next to struct definition
+}
+```
+
+### 4. Don't Register Third-Party Structs
+
+```go
+// ❌ Don't register types you don't own
+import "github.com/someone/library"
+
+func init() {
+    lpg.Register[library.TheirStruct]()  // Bad idea
+}
+
+// ✅ Create your own wrapper type
+type MyStruct struct {
+    library.TheirStruct
+    MyField string
+}
+
+func init() {
+    lpg.Register[MyStruct]()
+}
+```
+
+## Summary
+
+| Aspect | Details |
+|--------|---------|
+| **When** | `init()` function |
+| **What** | Builds FieldMap metadata |
+| **Cost** | ~10μs per type, one-time |
+| **Runtime** | O(1) lookup, zero reflection |
+| **Required** | For all generic operations |
+| **Optional** | Not needed for manual operations |
+
+## Next Steps
+
+- [Naming Strategies](/guides/naming-strategies) - Customize name mapping
+- [Core Concepts](/getting-started/core-concepts) - Architecture overview
+- [API Reference](/api-reference/core/registration) - `Register` function documentation

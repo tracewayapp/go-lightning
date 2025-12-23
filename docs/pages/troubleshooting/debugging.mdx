@@ -1,0 +1,86 @@
+# Debugging Guide
+
+Tips and techniques for debugging go-lightning applications.
+
+## Inspecting FieldMap
+
+View registered metadata:
+
+```go
+import (
+    "reflect"
+    "fmt"
+    golightning "github.com/tracewayapp/go-lightning"
+)
+
+userType := reflect.TypeOf(User{})
+fieldMap, err := golightning.GetFieldMap(userType)
+if err != nil {
+    log.Fatal("Not registered:", err)
+}
+
+fmt.Println("Table:", fieldMap.TableName)
+fmt.Println("Columns:", fieldMap.ColumnKeys)
+fmt.Println("INSERT:", fieldMap.InsertQuery)
+fmt.Println("UPDATE:", fieldMap.UpdateQuery)
+```
+
+## Logging Queries
+
+Enable SQL logging in your database driver:
+
+### PostgreSQL (pgx)
+
+```go
+import (
+    "github.com/jackc/pgx/v5"
+    "github.com/jackc/pgx/v5/tracelog"
+)
+
+config, _ := pgx.ParseConfig(connString)
+config.Tracer = &tracelog.TraceLog{
+    Logger:   tracelog.LoggerFunc(func(ctx context.Context, level tracelog.LogLevel, msg string, data map[string]interface{}) {
+        log.Printf("[%s] %s %v", level, msg, data)
+    }),
+    LogLevel: tracelog.LogLevelDebug,
+}
+```
+
+### MySQL
+
+Set `?parseTime=true&loc=Local&interpolateParams=true` for query interpolation.
+
+## Common Debugging Steps
+
+1. **Verify registration:**
+   ```go
+   // Check if type is registered
+   _, err := golightning.GetFieldMap(reflect.TypeOf(User{}))
+   if err != nil {
+       log.Println("User not registered!")
+   }
+   ```
+
+2. **Check database schema:**
+   ```bash
+   # PostgreSQL
+   psql -d dbname -c "\d users"
+
+   # MySQL
+   mysql -e "DESCRIBE users"
+   ```
+
+3. **Validate struct fields match columns:**
+   Ensure naming strategy produces correct names.
+
+4. **Test with simple queries:**
+   Start with `SELECT *` before complex queries.
+
+5. **Enable verbose error logging:**
+   ```go
+   if err != nil {
+       log.Printf("Error: %+v\n", err)  // Verbose error
+   }
+   ```
+
+See [Common Errors](/troubleshooting/common-errors) for specific issues.

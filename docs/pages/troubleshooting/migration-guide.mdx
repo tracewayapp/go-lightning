@@ -1,0 +1,77 @@
+# Migration Guide
+
+Migrating to go-lightning from other approaches.
+
+## From database/sql
+
+### Before (database/sql)
+
+```go
+var id int
+var name string
+var email string
+
+rows, err := db.Query("SELECT id, name, email FROM users")
+for rows.Next() {
+    err := rows.Scan(&id, &name, &email)
+    // ...
+}
+```
+
+### After (go-lightning)
+
+```go
+type User struct {
+    Id    int
+    Name  string
+    Email string
+}
+
+func init() {
+    lpg.Register[User]()
+}
+
+users, err := lpg.SelectGeneric[User](tx, "SELECT * FROM users")
+```
+
+## From GORM
+
+### Before (GORM)
+
+```go
+var users []User
+db.Where("age > ?", 25).Find(&users)
+
+user := User{Name: "John"}
+db.Create(&user)
+```
+
+### After (go-lightning)
+
+```go
+users, err := lpg.SelectGeneric[User](tx,
+    "SELECT * FROM users WHERE age > $1", 25)
+
+id, err := lpg.InsertGeneric(tx, &User{Name: "John"})
+```
+
+**Key Differences:**
+- go-lightning requires explicit SQL
+- go-lightning uses transactions
+- go-lightning has less "magic"
+
+## Incremental Adoption
+
+You can use go-lightning alongside existing code:
+
+```go
+// Existing database/sql code
+rows, _ := db.Query("SELECT * FROM products")
+
+// New go-lightning code
+tx, _ := db.Begin()
+users, _ := lpg.SelectGeneric[User](tx, "SELECT * FROM users")
+tx.Commit()
+```
+
+See [Introduction](/getting-started/introduction) for philosophy comparison.

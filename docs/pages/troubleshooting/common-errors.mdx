@@ -1,0 +1,148 @@
+# Common Errors
+
+Solutions to frequently encountered errors.
+
+## "Non registered model X used"
+
+**Error Message:**
+```
+Non registered model User used. Please call `var _ = Register[User]()` after you define User
+```
+
+**Cause:** Type was never registered with `Register[T]()`.
+
+**Solution:**
+```go
+func init() {
+    lpg.Register[User]()  // Add this
+}
+```
+
+---
+
+## "invalid column that is not found in the struct"
+
+**Error Message:**
+```
+invalid column that is not found in the struct created_at
+```
+
+**Cause:** SELECT query returns columns not in your struct.
+
+**Solutions:**
+
+1. Only select columns that exist:
+```go
+// ❌ Bad
+users, err := lpg.SelectGeneric[User](tx, "SELECT *, created_at FROM users")
+
+// ✅ Good
+users, err := lpg.SelectGeneric[User](tx, "SELECT id, name, email FROM users")
+```
+
+2. Add field to struct:
+```go
+type User struct {
+    Id        int
+    Name      string
+    CreatedAt time.Time  // Add this
+}
+```
+
+---
+
+## "parameter 'where' was not present"
+
+**Error Message:**
+```
+parameter 'where' was not present
+```
+
+**Cause:** Empty WHERE clause in `UpdateGeneric`.
+
+**Solution:**
+```go
+// ❌ Bad
+lpg.UpdateGeneric(tx, user, "", nil)
+
+// ✅ Good
+lpg.UpdateGeneric(tx, user, "id = $1", user.Id)
+```
+
+---
+
+## Parameter Mismatch Errors
+
+**PostgreSQL - "bind message supplies X parameters, but prepared statement requires Y"**
+
+**Cause:** Wrong number of arguments for placeholders.
+
+**Solution:**
+```go
+// ❌ Bad: 2 placeholders, 1 argument
+lpg.SelectGeneric[User](tx, "SELECT * FROM users WHERE id = $1 AND active = $2", userId)
+
+// ✅ Good: 2 placeholders, 2 arguments
+lpg.SelectGeneric[User](tx, "SELECT * FROM users WHERE id = $1 AND active = $2", userId, true)
+```
+
+---
+
+## "sql: transaction has already been committed or rolled back"
+
+**Cause:** Using transaction after commit/rollback.
+
+**Solution:**
+```go
+tx, _ := db.Begin()
+defer tx.Rollback()
+
+lpg.InsertGeneric(tx, &user)
+tx.Commit()
+
+// ❌ Don't use tx after commit
+// lpg.SelectGeneric[User](tx, query)  // Error!
+
+// ✅ Create new transaction
+tx2, _ := db.Begin()
+defer tx2.Rollback()
+lpg.SelectGeneric[User](tx2, query)
+tx2.Commit()
+```
+
+---
+
+## "too many clients already" (PostgreSQL)
+
+**Cause:** Connection pool exhausted.
+
+**Solutions:**
+
+1. Reduce max connections:
+```go
+db.SetMaxOpenConns(10)
+```
+
+2. Ensure transactions are closed:
+```go
+// ✅ Always use defer
+tx, _ := db.Begin()
+defer tx.Rollback()
+```
+
+---
+
+## "parseTime parameter must be set to true" (MySQL)
+
+**Cause:** Missing `parseTime=true` in connection string.
+
+**Solution:**
+```go
+// ❌ Bad
+"user:pass@tcp(localhost:3306)/db"
+
+// ✅ Good
+"user:pass@tcp(localhost:3306)/db?parseTime=true"
+```
+
+See [Debugging Guide](/troubleshooting/debugging) for more help.

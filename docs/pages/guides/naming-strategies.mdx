@@ -1,0 +1,487 @@
+# Naming Strategies
+
+Learn how to customize the mapping between Go struct names and database table/column names.
+
+## Overview
+
+**Naming strategies** control how go-lightning converts Go naming conventions (CamelCase) to database naming conventions (typically snake_case).
+
+## The DbNamingStrategy Interface
+
+```go
+type DbNamingStrategy interface {
+    GetTableNameFromStructName(string) string
+    GetColumnNameFromStructName(string) string
+}
+```
+
+**Two methods:**
+1. `GetTableNameFromStructName` - Converts struct name → table name
+2. `GetColumnNameFromStructName` - Converts field name → column name
+
+## Default Naming Strategy
+
+go-lightning uses `DefaultDbNamingStrategy` which implements standard conventions:
+
+### Table Name Conversion
+
+**Rule:** CamelCase → snake_case + add `s` suffix
+
+**Examples:**
+
+```go
+"User"           → "users"
+"UserProfile"    → "user_profiles"
+"OrderHistory"   → "order_historys"   // Simple suffix, not smart plural
+"APIKey"         → "a_p_i_keys"
+```
+
+### Column Name Conversion
+
+**Rule:** CamelCase → snake_case
+
+**Examples:**
+
+```go
+"Id"             → "id"
+"FirstName"      → "first_name"
+"EmailAddress"   → "email_address"
+"IsActive"       → "is_active"
+"CreatedAt"      → "created_at"
+"JSONData"       → "j_s_o_n_data"
+```
+
+## Default Strategy Implementation
+
+The default strategy follows this algorithm:
+
+```go
+type DefaultDbNamingStrategy struct{}
+
+func (DefaultDbNamingStrategy) GetTableNameFromStructName(structName string) string {
+    // Convert to snake_case
+    snake := toSnakeCase(structName)
+    // Add 's' suffix for pluralization
+    return snake + "s"
+}
+
+func (DefaultDbNamingStrategy) GetColumnNameFromStructName(fieldName string) string {
+    // Convert to snake_case
+    return toSnakeCase(fieldName)
+}
+
+func toSnakeCase(s string) string {
+    var result []rune
+    for i, r := range s {
+        if unicode.IsUpper(r) {
+            if i > 0 {
+                result = append(result, '_')
+            }
+            result = append(result, unicode.ToLower(r))
+        } else {
+            result = append(result, r)
+        }
+    }
+    return string(result)
+}
+```
+
+## Common Customizations
+
+### 1. No Pluralization
+
+If your tables don't use plural names:
+
+```go
+type NoPluralNamingStrategy struct{}
+
+func (NoPluralNamingStrategy) GetTableNameFromStructName(structName string) string {
+    return toSnakeCase(structName)  // No 's' suffix
+}
+
+func (NoPluralNamingStrategy) GetColumnNameFromStructName(fieldName string) string {
+    return toSnakeCase(fieldName)
+}
+
+// Usage
+func init() {
+    golightning.Register[User](
+        NoPluralNamingStrategy{},
+        lpg.PgInsertUpdateQueryGenerator{},
+    )
+}
+```
+
+**Result:**
+- `User` → `user` (not `users`)
+- `Product` → `product` (not `products`)
+
+### 2. Table Prefix
+
+Add a prefix to all table names:
+
+```go
+type PrefixedNamingStrategy struct {
+    Prefix string
+}
+
+func (s PrefixedNamingStrategy) GetTableNameFromStructName(structName string) string {
+    return s.Prefix + toSnakeCase(structName) + "s"
+}
+
+func (s PrefixedNamingStrategy) GetColumnNameFromStructName(fieldName string) string {
+    return toSnakeCase(fieldName)
+}
+
+// Usage
+func init() {
+    golightning.Register[User](
+        PrefixedNamingStrategy{Prefix: "app_"},
+        lpg.PgInsertUpdateQueryGenerator{},
+    )
+}
+```
+
+**Result:**
+- `User` → `app_users`
+- `Product` → `app_products`
+
+### 3. Table Suffix
+
+Add a suffix to table names (e.g., for table partitioning):
+
+```go
+type SuffixedNamingStrategy struct {
+    Suffix string
+}
+
+func (s SuffixedNamingStrategy) GetTableNameFromStructName(structName string) string {
+    return toSnakeCase(structName) + "s" + s.Suffix
+}
+
+func (s SuffixedNamingStrategy) GetColumnNameFromStructName(fieldName string) string {
+    return toSnakeCase(fieldName)
+}
+
+// Usage
+func init() {
+    golightning.Register[User](
+        SuffixedNamingStrategy{Suffix: "_2024"},
+        lpg.PgInsertUpdateQueryGenerator{},
+    )
+}
+```
+
+**Result:**
+- `User` → `users_2024`
+- `Order` → `orders_2024`
+
+### 4. Smart Pluralization
+
+Implement proper English pluralization rules:
+
+```go
+type SmartPluralNamingStrategy struct{}
+
+func (SmartPluralNamingStrategy) GetTableNameFromStructName(structName string) string {
+    snake := toSnakeCase(structName)
+    return pluralize(snake)
+}
+
+func (SmartPluralNamingStrategy) GetColumnNameFromStructName(fieldName string) string {
+    return toSnakeCase(fieldName)
+}
+
+func pluralize(word string) string {
+    // Simple pluralization rules (expand as needed)
+    if strings.HasSuffix(word, "y") {
+        return word[:len(word)-1] + "ies"  // category → categories
+    }
+    if strings.HasSuffix(word, "s") || strings.HasSuffix(word, "x") {
+        return word + "es"  // class → classes, box → boxes
+    }
+    return word + "s"
+}
+```
+
+**Result:**
+- `Category` → `categories` (not `categorys`)
+- `Class` → `classes` (not `classs`)
+- `Box` → `boxes` (not `boxs`)
+
+### 5. Custom Column Prefix
+
+Prefix all column names:
+
+```go
+type ColumnPrefixNamingStrategy struct {
+    ColumnPrefix string
+}
+
+func (s ColumnPrefixNamingStrategy) GetTableNameFromStructName(structName string) string {
+    return toSnakeCase(structName) + "s"
+}
+
+func (s ColumnPrefixNamingStrategy) GetColumnNameFromStructName(fieldName string) string {
+    return s.ColumnPrefix + toSnakeCase(fieldName)
+}
+
+// Usage
+func init() {
+    golightning.Register[User](
+        ColumnPrefixNamingStrategy{ColumnPrefix: "user_"},
+        lpg.PgInsertUpdateQueryGenerator{},
+    )
+}
+```
+
+**Result:**
+- Field `Id` → Column `user_id`
+- Field `Name` → Column `user_name`
+- Field `Email` → Column `user_email`
+
+### 6. Exact Match (No Conversion)
+
+Use exact struct/field names without conversion:
+
+```go
+type ExactNamingStrategy struct{}
+
+func (ExactNamingStrategy) GetTableNameFromStructName(structName string) string {
+    return structName  // No conversion
+}
+
+func (ExactNamingStrategy) GetColumnNameFromStructName(fieldName string) string {
+    return fieldName  // No conversion
+}
+```
+
+**Result:**
+- `UserProfile` → `UserProfile` table (exact match)
+- `FirstName` → `FirstName` column (exact match)
+
+**Use when:**
+- Your database uses CamelCase naming
+- Legacy database with mixed conventions
+
+## Overriding Default Strategy
+
+### For All Registrations (Global)
+
+Modify the package-level variable:
+
+```go
+import "github.com/tracewayapp/go-lightning/lpg"
+
+func init() {
+    // Override global naming strategy
+    lpg.NamingStrategy = PrefixedNamingStrategy{Prefix: "app_"}
+
+    // All subsequent registrations use new strategy
+    lpg.Register[User]()
+    lpg.Register[Product]()
+}
+```
+
+### For Single Registration (Per-Type)
+
+Use the core `Register` function with custom strategy:
+
+```go
+import golightning "github.com/tracewayapp/go-lightning"
+import "github.com/tracewayapp/go-lightning/lpg"
+
+func init() {
+    // User with custom strategy
+    golightning.Register[User](
+        PrefixedNamingStrategy{Prefix: "app_"},
+        lpg.PgInsertUpdateQueryGenerator{},
+    )
+
+    // Product with default strategy
+    lpg.Register[Product]()
+}
+```
+
+## Complete Example
+
+Here's a full example with a custom naming strategy:
+
+```go
+package models
+
+import (
+    "strings"
+    "unicode"
+
+    golightning "github.com/tracewayapp/go-lightning"
+    "github.com/tracewayapp/go-lightning/lpg"
+)
+
+// Custom strategy: prefix tables with "tbl_" and pluralize properly
+type CustomNamingStrategy struct{}
+
+func (CustomNamingStrategy) GetTableNameFromStructName(structName string) string {
+    snake := toSnakeCase(structName)
+    plural := smartPluralize(snake)
+    return "tbl_" + plural
+}
+
+func (CustomNamingStrategy) GetColumnNameFromStructName(fieldName string) string {
+    return toSnakeCase(fieldName)
+}
+
+func toSnakeCase(s string) string {
+    var result []rune
+    for i, r := range s {
+        if unicode.IsUpper(r) {
+            if i > 0 {
+                result = append(result, '_')
+            }
+            result = append(result, unicode.ToLower(r))
+        } else {
+            result = append(result, r)
+        }
+    }
+    return string(result)
+}
+
+func smartPluralize(word string) string {
+    if strings.HasSuffix(word, "y") {
+        return word[:len(word)-1] + "ies"
+    }
+    if strings.HasSuffix(word, "s") || strings.HasSuffix(word, "x") {
+        return word + "es"
+    }
+    return word + "s"
+}
+
+// User struct
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+}
+
+func init() {
+    // Register with custom strategy
+    golightning.Register[User](
+        CustomNamingStrategy{},
+        lpg.PgInsertUpdateQueryGenerator{},
+    )
+}
+
+// Result:
+// Table: tbl_users
+// Columns: id, first_name, last_name
+```
+
+**Schema:**
+```sql
+CREATE TABLE tbl_users (
+    id SERIAL PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL
+);
+```
+
+## Testing Your Strategy
+
+Verify your naming strategy with a simple test:
+
+```go
+package models
+
+import (
+    "reflect"
+    "testing"
+
+    golightning "github.com/tracewayapp/go-lightning"
+)
+
+func TestNamingStrategy(t *testing.T) {
+    userType := reflect.TypeOf(User{})
+    fieldMap, err := golightning.GetFieldMap(userType)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    // Check table name
+    expectedTable := "tbl_users"
+    if fieldMap.TableName != expectedTable {
+        t.Errorf("Expected table %s, got %s", expectedTable, fieldMap.TableName)
+    }
+
+    // Check column names
+    expectedColumns := []string{"id", "first_name", "last_name"}
+    if !reflect.DeepEqual(fieldMap.ColumnKeys, expectedColumns) {
+        t.Errorf("Expected columns %v, got %v", expectedColumns, fieldMap.ColumnKeys)
+    }
+}
+```
+
+## Common Pitfalls
+
+### 1. Inconsistent Casing
+
+```go
+// ❌ Database has mixed case but strategy uses lowercase
+CREATE TABLE Users (Id INT, FirstName TEXT)  -- Mixed case in DB
+
+// Strategy converts to lowercase
+type User struct { Id int; FirstName string }
+// Results in "users" and "first_name" → mismatch!
+
+// ✅ Use ExactNamingStrategy or match DB conventions
+```
+
+### 2. Special Characters
+
+```go
+// ❌ Don't use special chars in struct names
+type User_Profile struct { /* ... */ }  // Underscore in name
+
+// ✅ Use CamelCase
+type UserProfile struct { /* ... */ }
+```
+
+### 3. Changing Strategy After Registration
+
+```go
+// ❌ Can't change strategy after registration
+func init() {
+    lpg.Register[User]()  // Uses default strategy
+    lpg.NamingStrategy = CustomStrategy{}  // Too late!
+}
+
+// ✅ Set strategy before registration
+func init() {
+    lpg.NamingStrategy = CustomStrategy{}
+    lpg.Register[User]()  // Uses custom strategy
+}
+```
+
+## Summary
+
+| Strategy Type | Table Example | Column Example | Use Case |
+|--------------|---------------|----------------|----------|
+| **Default** | `users` | `first_name` | Standard Go → SQL |
+| **No Plural** | `user` | `first_name` | Singular table names |
+| **Prefixed** | `app_users` | `first_name` | Multi-tenant schemas |
+| **Suffixed** | `users_2024` | `first_name` | Partitioned tables |
+| **Smart Plural** | `categories` | `first_name` | Proper English rules |
+| **Exact** | `User` | `FirstName` | CamelCase databases |
+
+## Best Practices
+
+1. **Choose one strategy** and use it consistently across your project
+2. **Set global strategy** early in `init()` before any registrations
+3. **Document your strategy** so team members understand the mapping
+4. **Test your strategy** to verify it matches your database schema
+5. **Keep it simple** - complex strategies are harder to debug
+
+## Next Steps
+
+- [Registration System](/guides/registration) - How registration uses naming strategies
+- [Core Concepts](/getting-started/core-concepts) - Architecture overview
+- [API Reference](/api-reference/core/interfaces) - `DbNamingStrategy` interface documentation

@@ -1,0 +1,101 @@
+# MySQL Complete Example
+
+Complete MySQL example with go-lightning.
+
+## Key Differences from PostgreSQL
+
+- Uses `lmy` package instead of `lpg`
+- Connection string format
+- Parameter placeholders: `?` instead of `$1, $2`
+
+## Complete Code
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    "yourproject/models"
+
+    _ "github.com/go-sql-driver/mysql"
+    "github.com/tracewayapp/go-lightning/lmy"
+)
+
+func main() {
+    db, err := sql.Open("mysql",
+        "user:password@tcp(localhost:3306)/dbname?parseTime=true")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
+
+    tx, err := db.Begin()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer tx.Rollback()
+
+    // INSERT
+    id, err := lmy.InsertGeneric(tx, &models.User{
+        FirstName: "John",
+        LastName:  "Doe",
+        Email:     "john.doe@example.com",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Inserted ID: %d\n", id)
+
+    // SELECT with ? placeholder
+    user, err := lmy.SelectGenericSingle[models.User](tx,
+        "SELECT * FROM users WHERE id = ?", id)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Found: %s %s\n", user.FirstName, user.LastName)
+
+    // UPDATE
+    user.FirstName = "Jane"
+    err = lmy.UpdateGeneric(tx, user, "id = ?", id)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    tx.Commit()
+    fmt.Println("Success!")
+}
+```
+
+## models/user.go
+
+```go
+package models
+
+import "github.com/tracewayapp/go-lightning/lmy"
+
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+    Email     string
+}
+
+func init() {
+    lmy.Register[User]()  // MySQL registration
+}
+```
+
+## Schema
+
+```sql
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(255) NOT NULL,
+    last_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+See [MySQL Guide](/guides/mysql) for more details.

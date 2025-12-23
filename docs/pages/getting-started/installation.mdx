@@ -1,0 +1,272 @@
+# Installation
+
+## Prerequisites
+
+- **Go 1.25.1 or higher** - go-lightning uses Go generics (introduced in Go 1.18)
+- A supported database (PostgreSQL or MySQL)
+- Appropriate database driver
+
+## Choose Your Database
+
+go-lightning provides database-specific modules for PostgreSQL and MySQL. Choose the one that matches your database.
+
+### PostgreSQL Installation
+
+Install the PostgreSQL module:
+
+```bash
+go get github.com/tracewayapp/go-lightning/lpg
+```
+
+You'll also need a PostgreSQL driver. The recommended driver is **pgx**:
+
+```bash
+go get github.com/jackc/pgx/v5
+go get github.com/jackc/pgx/v5/stdlib
+```
+
+### MySQL Installation
+
+Install the MySQL module:
+
+```bash
+go get github.com/tracewayapp/go-lightning/lmy
+```
+
+You'll also need a MySQL driver:
+
+```bash
+go get github.com/go-sql-driver/mysql
+```
+
+## Core Library (Optional)
+
+If you want to use the core generic utilities without database-specific implementations:
+
+```bash
+go get github.com/tracewayapp/go-lightning
+```
+
+Most users will use the database-specific modules (`lpg` or `lmy`) which already include the core library.
+
+## Verify Installation
+
+Create a simple Go file to verify the installation:
+
+### PostgreSQL Verification
+
+```go
+package main
+
+import (
+    "database/sql"
+    _ "github.com/jackc/pgx/v5/stdlib"
+    "github.com/tracewayapp/go-lightning/lpg"
+)
+
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+    Email     string
+}
+
+func init() {
+    lpg.Register[User]()
+}
+
+func main() {
+    println("go-lightning for PostgreSQL installed successfully!")
+}
+```
+
+Run it:
+
+```bash
+go run main.go
+```
+
+If you see the success message, you're all set!
+
+### MySQL Verification
+
+```go
+package main
+
+import (
+    "database/sql"
+    _ "github.com/go-sql-driver/mysql"
+    "github.com/tracewayapp/go-lightning/lmy"
+)
+
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+    Email     string
+}
+
+func init() {
+    lmy.Register[User]()
+}
+
+func main() {
+    println("go-lightning for MySQL installed successfully!")
+}
+```
+
+Run it:
+
+```bash
+go run main.go
+```
+
+## Project Setup
+
+### Typical Project Structure
+
+```
+myproject/
+├── go.mod
+├── go.sum
+├── main.go
+└── models/
+    ├── user.go       # User struct with registration
+    └── product.go    # Product struct with registration
+```
+
+### models/user.go Example
+
+```go
+package models
+
+import "github.com/tracewayapp/go-lightning/lpg"
+
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+    Email     string
+}
+
+func init() {
+    lpg.Register[User]()  // Register during package initialization
+}
+```
+
+### main.go Example
+
+```go
+package main
+
+import (
+    "database/sql"
+    "log"
+
+    _ "github.com/jackc/pgx/v5/stdlib"
+    "github.com/tracewayapp/go-lightning/lpg"
+
+    "myproject/models"  // Import triggers init() and registration
+)
+
+func main() {
+    db, err := sql.Open("pgx", "postgres://user:pass@localhost/dbname")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
+
+    tx, _ := db.Begin()
+    defer tx.Rollback()
+
+    user := &models.User{
+        FirstName: "Jane",
+        LastName:  "Doe",
+        Email:     "jane@example.com",
+    }
+
+    id, err := lpg.InsertGeneric(tx, user)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    log.Printf("Inserted user with ID: %d\n", id)
+
+    tx.Commit()
+}
+```
+
+## Database Connection Strings
+
+### PostgreSQL
+
+```go
+// Standard connection string
+"postgres://username:password@localhost:5432/database_name?sslmode=disable"
+
+// Using environment variables
+import "os"
+connStr := os.Getenv("DATABASE_URL")
+db, err := sql.Open("pgx", connStr)
+```
+
+### MySQL
+
+```go
+// Standard connection string
+"username:password@tcp(localhost:3306)/database_name?parseTime=true"
+
+// Using environment variables
+import "os"
+connStr := os.Getenv("DATABASE_URL")
+db, err := sql.Open("mysql", connStr)
+```
+
+## Troubleshooting
+
+### "package github.com/tracewayapp/go-lightning/lpg is not in GOROOT"
+
+Make sure you've run `go get`:
+
+```bash
+go get github.com/tracewayapp/go-lightning/lpg
+```
+
+And ensure your `go.mod` file includes the dependency:
+
+```go
+module myproject
+
+go 1.25
+
+require github.com/tracewayapp/go-lightning v0.1.0
+```
+
+### "undefined: lpg.Register"
+
+Make sure you're importing the correct package:
+
+```go
+import "github.com/tracewayapp/go-lightning/lpg"  // PostgreSQL
+// or
+import "github.com/tracewayapp/go-lightning/lmy"  // MySQL
+```
+
+### "sql: unknown driver"
+
+You need to import the database driver:
+
+```go
+import _ "github.com/jackc/pgx/v5/stdlib"  // PostgreSQL
+// or
+import _ "github.com/go-sql-driver/mysql"  // MySQL
+```
+
+The `_` blank identifier imports the package for its side effects (registering the driver).
+
+## Next Steps
+
+- [Quick Start](/getting-started/quick-start) - Build your first application
+- [Core Concepts](/getting-started/core-concepts) - Understand how go-lightning works
+- [PostgreSQL Guide](/guides/postgresql) - PostgreSQL-specific features
+- [MySQL Guide](/guides/mysql) - MySQL-specific features

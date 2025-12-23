@@ -1,0 +1,78 @@
+# Manual Operations
+
+Database operations with custom row mapping functions. No type registration required.
+
+## SelectMultiple
+
+Execute SELECT with custom mapping function, returns multiple rows.
+
+### Signature
+
+```go
+func SelectMultiple[T any](tx *sql.Tx, mapLine func(*sql.Rows, *T) error, query string, args ...any) ([]*T, error)
+```
+
+### Parameters
+
+- `mapLine` - Function to map a row to a struct
+- `query` - SQL SELECT query
+- `args` - Query parameters
+
+### Example
+
+```go
+func mapUser(rows *sql.Rows, user *User) error {
+    return rows.Scan(&user.Id, &user.Name, &user.Email)
+}
+
+users, err := lpg.SelectMultiple[User](tx, mapUser,
+    "SELECT id, name, email FROM users")
+```
+
+---
+
+## SelectSingle
+
+Execute SELECT with custom mapping, returns first row or nil.
+
+### Signature
+
+```go
+func SelectSingle[T any](tx *sql.Tx, mapLine func(*sql.Rows, *T) error, query string, args ...any) (*T, error)
+```
+
+---
+
+## Insert
+
+Execute INSERT query and return last insert ID.
+
+### Signature
+
+```go
+func Insert(tx *sql.Tx, query string, args ...any) (int, error)
+```
+
+---
+
+## Update
+
+Execute UPDATE query.
+
+### Signature
+
+```go
+func Update(tx *sql.Tx, query string, args ...any) error
+```
+
+---
+
+## Delete
+
+Execute DELETE query.
+
+### Signature
+
+```go
+func Delete(tx *sql.Tx, query string, args ...any) error
+```

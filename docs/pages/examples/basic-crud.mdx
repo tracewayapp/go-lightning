@@ -1,0 +1,141 @@
+# Basic CRUD Example
+
+A simple, complete example demonstrating all CRUD operations with go-lightning.
+
+## Complete Code
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+
+    _ "github.com/jackc/pgx/v5/stdlib"
+    "github.com/tracewayapp/go-lightning/lpg"
+)
+
+// User model
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+    Email     string
+}
+
+// Register the type
+func init() {
+    lpg.Register[User]()
+}
+
+func main() {
+    // Connect to database
+    db, err := sql.Open("pgx", "postgres://user:password@localhost:5432/dbname?sslmode=disable")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
+
+    // Begin transaction
+    tx, err := db.Begin()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer tx.Rollback()
+
+    // CREATE
+    user := &User{
+        FirstName: "John",
+        LastName:  "Doe",
+        Email:     "john.doe@example.com",
+    }
+    id, err := lpg.InsertGeneric(tx, user)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Created user with ID: %d\n", id)
+
+    // READ (single)
+    foundUser, err := lpg.SelectGenericSingle[User](tx,
+        "SELECT * FROM users WHERE id = $1", id)
+    if err != nil {
+        log.Fatal(err)
+    }
+    if foundUser != nil {
+        fmt.Printf("Found: %s %s\n", foundUser.FirstName, foundUser.LastName)
+    }
+
+    // READ (multiple)
+    users, err := lpg.SelectGeneric[User](tx,
+        "SELECT * FROM users LIMIT 10")
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Total users: %d\n", len(users))
+
+    // UPDATE
+    foundUser.FirstName = "Jane"
+    err = lpg.UpdateGeneric(tx, foundUser, "id = $1", id)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println("Updated user")
+
+    // DELETE
+    err = lpg.Delete(tx, "DELETE FROM users WHERE id = $1", id)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println("Deleted user")
+
+    // Commit
+    if err := tx.Commit(); err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println("Success!")
+}
+```
+
+## Database Schema
+
+```sql
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL
+);
+```
+
+## Running the Example
+
+```bash
+# Install dependencies
+go get github.com/tracewayapp/go-lightning/lpg
+go get github.com/jackc/pgx/v5/stdlib
+
+# Create the database table
+psql -U user -d dbname < schema.sql
+
+# Run the example
+go run main.go
+```
+
+## Output
+
+```
+Created user with ID: 1
+Found: John Doe
+Total users: 1
+Updated user
+Deleted user
+Success!
+```
+
+## Next Steps
+
+- [PostgreSQL Complete Example](/examples/postgresql-complete) - Full example with error handling
+- [MySQL Complete Example](/examples/mysql-complete) - MySQL version
+- [UUID Entities](/examples/uuid-entities) - Using UUID primary keys

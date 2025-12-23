@@ -1,0 +1,204 @@
+# Registration Functions
+
+Functions for registering struct types with go-lightning.
+
+## Register
+
+Registers a struct type for use with generic database operations.
+
+### Signature
+
+```go
+func Register[T any](namingStrategy DbNamingStrategy, queryGenerator InsertUpdateQueryGenerator)
+```
+
+### Parameters
+
+- `T` - The struct type to register (type parameter)
+- `namingStrategy` - Implementation of `DbNamingStrategy` interface
+- `queryGenerator` - Implementation of `InsertUpdateQueryGenerator` interface
+
+### Description
+
+`Register[T]()` performs one-time reflection on a struct type to build metadata (`FieldMap`) that enables fast, type-safe database operations.
+
+**What happens:**
+1. Reflects on struct `T` to extract field names and types
+2. Applies naming strategy to convert Go names → database names
+3. Detects integer `Id` field for auto-increment handling
+4. Generates INSERT and UPDATE query templates
+5. Stores `FieldMap` in global registry
+
+### Example
+
+```go
+import golightning "github.com/tracewayapp/go-lightning"
+import "github.com/tracewayapp/go-lightning/lpg"
+
+type User struct {
+    Id        int
+    FirstName string
+    LastName  string
+    Email     string
+}
+
+func init() {
+    // Register with custom naming and PostgreSQL query generator
+    golightning.Register[User](
+        golightning.DefaultDbNamingStrategy{},
+        lpg.PgInsertUpdateQueryGenerator{},
+    )
+}
+```
+
+### Database-Specific Shortcuts
+
+#### PostgreSQL
+
+```go
+import "github.com/tracewayapp/go-lightning/lpg"
+
+func init() {
+    lpg.Register[User]()  // Uses DefaultDbNamingStrategy + PgInsertUpdateQueryGenerator
+}
+```
+
+#### MySQL
+
+```go
+import "github.com/tracewayapp/go-lightning/lmy"
+
+func init() {
+    lmy.Register[User]()  // Uses DefaultDbNamingStrategy + MySqlInsertUpdateQueryGenerator
+}
+```
+
+### When to Call
+
+**Recommended:** In `init()` function
+
+```go
+func init() {
+    lpg.Register[User]()
+}
+```
+
+**Why `init()`?**
+- Runs automatically when package is imported
+- Executes exactly once
+- Happens before `main()` starts
+- Thread-safe
+
+### Errors
+
+If you use a type without registering it first:
+
+```go
+// ❌ Never registered
+type User struct { /* ... */ }
+
+func main() {
+    id, err := lpg.InsertGeneric(tx, &User{})
+    // Panic: Non registered model User used. Please call `var _ = Register[User]()` after you define User
+}
+```
+
+**Solution:** Always register in `init()`:
+
+```go
+func init() {
+    lpg.Register[User]()
+}
+```
+
+### See Also
+
+- [Registration Guide](/guides/registration) - Comprehensive registration guide
+- [GetFieldMap](#getfieldmap) - Retrieve registration metadata
+
+---
+
+## GetFieldMap
+
+Retrieves the `FieldMap` for a registered struct type.
+
+### Signature
+
+```go
+func GetFieldMap(t reflect.Type) (*FieldMap, error)
+```
+
+### Parameters
+
+- `t` - The reflect.Type of the registered struct
+
+### Returns
+
+- `*FieldMap` - Pointer to the registered metadata
+- `error` - Error if type was never registered
+
+### Description
+
+Returns the pre-computed `FieldMap` containing column mappings, query templates, and other metadata for a registered type.
+
+### Example
+
+```go
+import (
+    "reflect"
+    "log"
+    golightning "github.com/tracewayapp/go-lightning"
+)
+
+type User struct {
+    Id   int
+    Name string
+}
+
+func init() {
+    golightning.Register[User](
+        golightning.DefaultDbNamingStrategy{},
+        lpg.PgInsertUpdateQueryGenerator{},
+    )
+}
+
+func main() {
+    userType := reflect.TypeOf(User{})
+    fieldMap, err := golightning.GetFieldMap(userType)
+    if err != nil {
+        log.Fatal("User type not registered:", err)
+    }
+
+    fmt.Println("Columns:", fieldMap.ColumnKeys)
+    fmt.Println("INSERT Query:", fieldMap.InsertQuery)
+    fmt.Println("UPDATE Query:", fieldMap.UpdateQuery)
+}
+```
+
+**Output:**
+```
+Columns: [id name]
+INSERT Query: INSERT INTO users (name) VALUES ($1) RETURNING id
+UPDATE Query: UPDATE users SET id = $1, name = $2 WHERE
+```
+
+### Error Handling
+
+```go
+fieldMap, err := golightning.GetFieldMap(reflect.TypeOf(UnregisteredType{}))
+if err != nil {
+    // Error: "Non registered model UnregisteredType used..."
+    log.Fatal(err)
+}
+```
+
+### Use Cases
+
+1. **Debugging** - Inspect generated queries
+2. **Testing** - Verify registration configuration
+3. **Advanced Usage** - Custom operations needing field metadata
+
+### See Also
+
+- [FieldMap Structure](/api-reference/core/interfaces#fieldmap)
+- [Registration Guide](/guides/registration)

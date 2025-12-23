@@ -1,0 +1,55 @@
+# Helper Functions
+
+Utility functions for validation and query building.
+
+## ValidateColumns
+
+Validates that all column names exist in a registered struct.
+
+### Signature
+
+```go
+func ValidateColumns[T any](columns []string, fieldMap *FieldMap) error
+```
+
+### Description
+
+Used internally by `SelectGeneric` to ensure query columns match struct fields.
+
+---
+
+## GetPointersForColumns
+
+Creates pointers to struct fields in the order needed for scanning.
+
+### Signature
+
+```go
+func GetPointersForColumns[T any](columns []string, fieldMap *FieldMap, t *T) *[]interface{}
+```
+
+### Description
+
+Internal function used by generic operations for efficient row scanning.
+
+---
+
+## JoinForIn
+
+Builds comma-separated string for integer IN clauses.
+
+### Signature
+
+```go
+func JoinForIn(ids []int) string
+```
+
+### Example
+
+```go
+ids := []int{1, 2, 3}
+query := fmt.Sprintf("SELECT * FROM users WHERE id IN (%s)", lpg.JoinForIn(ids))
+// query: "SELECT * FROM users WHERE id IN (1,2,3)"
+```
+
+See complete documentation for parameter handling helpers in database-specific modules.

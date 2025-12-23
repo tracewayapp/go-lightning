@@ -1,0 +1,69 @@
+# Advanced Queries
+
+Examples of complex queries with go-lightning.
+
+## JOIN Queries
+
+Use manual operations for JOINs:
+
+```go
+type UserWithProfile struct {
+    UserId      int
+    UserName    string
+    ProfileBio  string
+}
+
+func mapUserProfile(rows *sql.Rows, u *UserWithProfile) error {
+    return rows.Scan(&u.UserId, &u.UserName, &u.ProfileBio)
+}
+
+results, err := lpg.SelectMultiple[UserWithProfile](tx, mapUserProfile, `
+    SELECT u.id, u.name, p.bio
+    FROM users u
+    JOIN profiles p ON p.user_id = u.id
+    WHERE u.active = $1
+`, true)
+```
+
+## IN Clauses
+
+```go
+ids := []int{1, 2, 3, 4, 5}
+query := fmt.Sprintf("SELECT * FROM users WHERE id IN (%s)",
+    lpg.JoinForIn(ids))
+users, err := lpg.SelectGeneric[User](tx, query)
+```
+
+## Aggregations
+
+```go
+type UserCount struct {
+    City  string
+    Count int
+}
+
+func mapCount(rows *sql.Rows, uc *UserCount) error {
+    return rows.Scan(&uc.City, &uc.Count)
+}
+
+counts, err := lpg.SelectMultiple[UserCount](tx, mapCount, `
+    SELECT city, COUNT(*) as count
+    FROM users
+    GROUP BY city
+    ORDER BY count DESC
+`)
+```
+
+## Pagination
+
+```go
+page := 1
+pageSize := 20
+offset := (page - 1) * pageSize
+
+users, err := lpg.SelectGeneric[User](tx,
+    "SELECT * FROM users ORDER BY id LIMIT $1 OFFSET $2",
+    pageSize, offset)
+```
+
+See guides for more complex patterns.

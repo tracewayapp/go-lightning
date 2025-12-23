@@ -1,0 +1,48 @@
+# PostgreSQL CRUD Operations
+
+Complete reference for PostgreSQL-specific CRUD operations.
+
+All operations are in the `lpg` package and support PostgreSQL-specific features.
+
+## See Core Documentation
+
+Most operations delegate to core implementations with PostgreSQL-specific query generation:
+
+- [Generic Operations](/api-reference/core/generic-operations) - Core generic functions
+- [Manual Operations](/api-reference/core/manual-operations) - Core manual functions
+
+## PostgreSQL-Specific Differences
+
+### InsertGeneric
+
+Uses `QueryRow` with `RETURNING id` clause instead of `LastInsertId()`.
+
+```go
+id, err := lpg.InsertGeneric(tx, &user)
+// Executes: INSERT INTO users (...) VALUES ($1, $2) RETURNING id
+```
+
+### UpdateGeneric
+
+Automatically renumbers `$N` placeholders in WHERE clause:
+
+```go
+lpg.UpdateGeneric(tx, user, "id = $1", userId)
+// WHERE parameter $1 becomes $4 (after SET parameters)
+```
+
+### JoinStringForIn
+
+Generates parameterized placeholders for IN clauses:
+
+```go
+params := []string{"a", "b", "c"}
+placeholders := lpg.JoinStringForIn(0, params)
+// Returns: "$1,$2,$3"
+
+// With offset
+placeholders := lpg.JoinStringForIn(2, params)
+// Returns: "$3,$4,$5"
+```
+
+See [PostgreSQL Guide](/guides/postgresql) for detailed examples.

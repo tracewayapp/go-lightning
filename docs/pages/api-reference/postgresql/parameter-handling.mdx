@@ -1,0 +1,48 @@
+# Parameter Handling
+
+PostgreSQL uses numbered placeholders (`$1, $2, $3`) which require special handling.
+
+## JoinStringForIn
+
+Generate parameterized IN clause placeholders with offset support.
+
+### Signature
+
+```go
+func JoinStringForIn(offset int, params []string) string
+```
+
+### Examples
+
+```go
+// Basic usage
+params := []string{"a", "b", "c"}
+placeholders := lpg.JoinStringForIn(0, params)
+// Returns: "$1,$2,$3"
+
+query := fmt.Sprintf("SELECT * FROM users WHERE name IN (%s)", placeholders)
+users, err := lpg.SelectGeneric[User](tx, query, params...)
+```
+
+```go
+// With offset
+age := 25
+names := []string{"Alice", "Bob"}
+
+placeholders := lpg.JoinStringForIn(1, names)  // offset=1
+// Returns: "$2,$3"
+
+query := fmt.Sprintf("SELECT * FROM users WHERE age > $1 AND name IN (%s)", placeholders)
+users, err := lpg.SelectGeneric[User](tx, query, age, names...)
+```
+
+## Automatic Renumbering in UpdateGeneric
+
+WHERE clause parameters are automatically renumbered:
+
+```go
+lpg.UpdateGeneric(tx, user, "id = $1 AND status = $2", userId, "active")
+// $1 becomes $N+1 where N is the number of SET parameters
+```
+
+See [PostgreSQL Guide](/guides/postgresql#parameter-offset-handling-in-where-clauses) for details.

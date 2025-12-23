@@ -1,0 +1,45 @@
+# MySQL CRUD Operations
+
+Complete reference for MySQL-specific CRUD operations.
+
+All operations are in the `lmy` package and support MySQL-specific features.
+
+## See Core Documentation
+
+Most operations delegate directly to core implementations:
+
+- [Generic Operations](/api-reference/core/generic-operations) - Core generic functions
+- [Manual Operations](/api-reference/core/manual-operations) - Core manual functions
+
+## MySQL-Specific Differences
+
+### Parameter Placeholders
+
+All parameters use `?`:
+
+```go
+user, err := lmy.SelectGenericSingle[User](tx,
+    "SELECT * FROM users WHERE id = ?", userId)
+```
+
+### InsertGeneric
+
+Uses `NULL` for AUTO_INCREMENT fields:
+
+```go
+id, err := lmy.InsertGeneric(tx, &user)
+// Executes: INSERT INTO users (id, name) VALUES (NULL, ?)
+// Then uses LastInsertId() to get generated ID
+```
+
+### JoinStringForIn
+
+Generates `?` placeholders (offset parameter ignored):
+
+```go
+params := []string{"a", "b", "c"}
+placeholders := lmy.JoinStringForIn(0, params)
+// Returns: "?,?,?"
+```
+
+See [MySQL Guide](/guides/mysql) for detailed examples.
