@@ -107,6 +107,7 @@ We welcome all contributions to the go-lightning project. You can open issues or
 
 ## Roadmap
 
+- [ ] Add support for clickhouse
 - [ ] Add more examples
 - [ ] Add support for named fields `db:"column_name"` (this can be done by using a naming strategy currently)
 - [ ] Add a project homepage
