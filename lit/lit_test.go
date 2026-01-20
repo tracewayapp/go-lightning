@@ -645,7 +645,7 @@ func TestExecutorWithTransaction_MySQL(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestInsertGenericUuid_PostgreSQL(t *testing.T) {
+func TestInsertUuid_PostgreSQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestProduct]())
 	RegisterModel[TestProduct](PostgreSQL)
 
@@ -657,7 +657,7 @@ func TestInsertGenericUuid_PostgreSQL(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	product := &TestProduct{Name: "Widget", Price: 100}
-	uuid, err := InsertGenericUuid[TestProduct](db, product)
+	uuid, err := InsertUuid[TestProduct](db, product)
 	require.NoError(t, err)
 	assert.NotEmpty(t, uuid)
 	assert.Equal(t, uuid, product.Id)
@@ -665,7 +665,7 @@ func TestInsertGenericUuid_PostgreSQL(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestInsertGenericUuid_MySQL(t *testing.T) {
+func TestInsertUuid_MySQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestProduct]())
 	RegisterModel[TestProduct](MySQL)
 
@@ -677,7 +677,7 @@ func TestInsertGenericUuid_MySQL(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	product := &TestProduct{Name: "Widget", Price: 100}
-	uuid, err := InsertGenericUuid[TestProduct](db, product)
+	uuid, err := InsertUuid[TestProduct](db, product)
 	require.NoError(t, err)
 	assert.NotEmpty(t, uuid)
 	assert.Equal(t, uuid, product.Id)
@@ -685,7 +685,7 @@ func TestInsertGenericUuid_MySQL(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestInsertGenericExistingUuid_PostgreSQL(t *testing.T) {
+func TestInsertExistingUuid_PostgreSQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestProduct]())
 	RegisterModel[TestProduct](PostgreSQL)
 
@@ -698,13 +698,13 @@ func TestInsertGenericExistingUuid_PostgreSQL(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	product := &TestProduct{Id: "existing-uuid-123", Name: "Widget", Price: 100}
-	err = InsertGenericExistingUuid[TestProduct](db, product)
+	err = InsertExistingUuid[TestProduct](db, product)
 	require.NoError(t, err)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestInsertGenericExistingUuid_MySQL(t *testing.T) {
+func TestInsertExistingUuid_MySQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestProduct]())
 	RegisterModel[TestProduct](MySQL)
 
@@ -717,7 +717,7 @@ func TestInsertGenericExistingUuid_MySQL(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	product := &TestProduct{Id: "existing-uuid-123", Name: "Widget", Price: 100}
-	err = InsertGenericExistingUuid[TestProduct](db, product)
+	err = InsertExistingUuid[TestProduct](db, product)
 	require.NoError(t, err)
 
 	assert.NoError(t, mock.ExpectationsWereMet())

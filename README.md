@@ -128,11 +128,11 @@ func init() {
 
 func example(db *sql.DB) {
     // Auto-generate UUID
-    uuid, _ := lit.InsertGenericUuid(db, &Product{Name: "Widget", Price: 100})
+    uuid, _ := lit.InsertUuid(db, &Product{Name: "Widget", Price: 100})
 
     // Use existing UUID
     product := &Product{Id: "my-custom-uuid", Name: "Gadget", Price: 200}
-    _ = lit.InsertGenericExistingUuid(db, product)
+    _ = lit.InsertExistingUuid(db, product)
 }
 ```
 

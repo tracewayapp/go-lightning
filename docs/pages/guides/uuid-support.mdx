@@ -5,6 +5,7 @@ go-lightning supports UUID primary keys through dedicated insert functions.
 ## When to Use UUIDs
 
 UUIDs are useful when you need:
+
 - Globally unique identifiers across systems
 - IDs that don't reveal sequence information
 - Client-generated IDs before server insertion
@@ -25,12 +26,12 @@ type Session struct {
 
 When registering, go-lightning detects that `Id` is not an integer and sets `HasIntId = false`. This changes how INSERT queries are generated.
 
-## InsertGenericUuid
+## InsertUuid
 
 Use this when you want go-lightning to generate the UUID:
 
 ```go
-func InsertGenericUuid[T any](ex Executor, t *T) (string, error)
+func InsertUuid[T any](ex Executor, t *T) (string, error)
 ```
 
 ### Example
@@ -52,7 +53,7 @@ session := Session{
 }
 
 // go-lightning generates UUID and sets it on the struct
-uuid, err := lit.InsertGenericUuid(db, &session)
+uuid, err := lit.InsertUuid(db, &session)
 if err != nil {
     return err
 }
@@ -69,12 +70,12 @@ fmt.Printf("session.Id is also set: %s\n", session.Id)
 3. Executes the INSERT with all fields including the ID
 4. Returns the generated UUID
 
-## InsertGenericExistingUuid
+## InsertExistingUuid
 
 Use this when you already have a UUID:
 
 ```go
-func InsertGenericExistingUuid[T any](ex Executor, t *T) error
+func InsertExistingUuid[T any](ex Executor, t *T) error
 ```
 
 ### Example
@@ -87,7 +88,7 @@ session := Session{
     ExpiresAt: time.Now().Add(24 * time.Hour),
 }
 
-err := lit.InsertGenericExistingUuid(db, &session)
+err := lit.InsertExistingUuid(db, &session)
 if err != nil {
     return err
 }
@@ -183,7 +184,7 @@ func (r *ApiKeyRepository) Create(ex lit.Executor, userId int, name string, key 
         CreatedAt: time.Now(),
     }
 
-    _, err := lit.InsertGenericUuid(ex, &apiKey)
+    _, err := lit.InsertUuid(ex, &apiKey)
     if err != nil {
         return nil, err
     }

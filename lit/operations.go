@@ -91,7 +91,7 @@ func Insert[T any](ex Executor, t *T) (int, error) {
 	return fieldMap.Driver.InsertAndGetId(ex, fieldMap.InsertQuery, pointers...)
 }
 
-func InsertGenericUuid[T any](ex Executor, t *T) (string, error) {
+func InsertUuid[T any](ex Executor, t *T) (string, error) {
 	tType := reflect.TypeOf(*t)
 	fieldMap, err := GetFieldMap(tType)
 	if err != nil {
@@ -117,7 +117,7 @@ func InsertGenericUuid[T any](ex Executor, t *T) (string, error) {
 	return newUuidString, nil
 }
 
-func InsertGenericExistingUuid[T any](ex Executor, t *T) error {
+func InsertExistingUuid[T any](ex Executor, t *T) error {
 	tType := reflect.TypeOf(*t)
 	fieldMap, err := GetFieldMap(tType)
 	if err != nil {

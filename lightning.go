@@ -145,7 +145,7 @@ func GetPointersForColumns[T any](columns []string, fieldMap *FieldMap, t *T) *[
 	return &dest
 }
 
-func InsertGenericUuid[T any](tx *sql.Tx, t *T) (string, error) {
+func InsertUuid[T any](tx *sql.Tx, t *T) (string, error) {
 	tType := reflect.TypeOf(*t)
 	fieldMap, err := GetFieldMap(tType)
 
@@ -278,7 +278,7 @@ func Insert[T any](tx *sql.Tx, t *T) (int, error) {
 	return int(id), nil
 }
 
-func InsertGenericExistingUuid[T any](tx *sql.Tx, t *T) error {
+func InsertExistingUuid[T any](tx *sql.Tx, t *T) error {
 	tType := reflect.TypeOf(*t)
 	fieldMap, err := GetFieldMap(tType)
 	if err != nil {

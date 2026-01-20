@@ -13,9 +13,11 @@ func RegisterModel[T any](driver Driver)
 ```
 
 **Parameters:**
+
 - `driver`: Database driver (`lit.PostgreSQL` or `lit.MySQL`)
 
 **Example:**
+
 ```go
 lit.RegisterModel[User](lit.PostgreSQL)
 ```
@@ -29,10 +31,12 @@ func RegisterModelWithNaming[T any](driver Driver, namingStrategy DbNamingStrate
 ```
 
 **Parameters:**
+
 - `driver`: Database driver
 - `namingStrategy`: Implementation of `DbNamingStrategy`
 
 **Example:**
+
 ```go
 lit.RegisterModelWithNaming[User](lit.PostgreSQL, MyNamingStrategy{})
 ```
@@ -48,15 +52,18 @@ func Select[T any](ex Executor, query string, args ...any) ([]*T, error)
 ```
 
 **Parameters:**
+
 - `ex`: Database connection or transaction
 - `query`: SQL SELECT query
 - `args`: Query parameters
 
 **Returns:**
+
 - `[]*T`: Slice of pointers to results
 - `error`: Any error that occurred
 
 **Example:**
+
 ```go
 users, err := lit.Select[User](db, "SELECT id, name, email FROM users WHERE active = $1", true)
 ```
@@ -70,15 +77,18 @@ func SelectSingle[T any](ex Executor, query string, args ...any) (*T, error)
 ```
 
 **Parameters:**
+
 - `ex`: Database connection or transaction
 - `query`: SQL SELECT query
 - `args`: Query parameters
 
 **Returns:**
+
 - `*T`: Pointer to result, or nil if not found
 - `error`: Any error that occurred
 
 **Example:**
+
 ```go
 user, err := lit.SelectSingle[User](db, "SELECT id, name, email FROM users WHERE id = $1", 123)
 ```
@@ -97,12 +107,14 @@ func SelectMultipleNative[T any](
 ```
 
 **Parameters:**
+
 - `ex`: Database connection or transaction
 - `mapLine`: Function to scan each row
 - `query`: SQL SELECT query
 - `args`: Query parameters
 
 **Example:**
+
 ```go
 results, err := lit.SelectMultipleNative[Result](db,
     func(scanner *interface{ Scan(...any) error }, r *Result) error {
@@ -122,57 +134,66 @@ func Insert[T any](ex Executor, t *T) (int, error)
 ```
 
 **Parameters:**
+
 - `ex`: Database connection or transaction
 - `t`: Pointer to the struct to insert
 
 **Returns:**
+
 - `int`: Generated ID
 - `error`: Any error that occurred
 
 **Example:**
+
 ```go
 id, err := lit.Insert(db, &user)
 ```
 
-### InsertGenericUuid
+### InsertUuid
 
 Inserts a record with an auto-generated UUID.
 
 ```go
-func InsertGenericUuid[T any](ex Executor, t *T) (string, error)
+func InsertUuid[T any](ex Executor, t *T) (string, error)
 ```
 
 **Parameters:**
+
 - `ex`: Database connection or transaction
 - `t`: Pointer to the struct to insert (Id field will be set)
 
 **Returns:**
+
 - `string`: Generated UUID
 - `error`: Any error that occurred
 
 **Example:**
+
 ```go
-uuid, err := lit.InsertGenericUuid(db, &session)
+uuid, err := lit.InsertUuid(db, &session)
 ```
 
-### InsertGenericExistingUuid
+### InsertExistingUuid
 
 Inserts a record with a pre-existing UUID.
 
 ```go
-func InsertGenericExistingUuid[T any](ex Executor, t *T) error
+func InsertExistingUuid[T any](ex Executor, t *T) error
 ```
 
 **Parameters:**
+
 - `ex`: Database connection or transaction
 - `t`: Pointer to the struct to insert (Id must be set)
 
 **Returns:**
+
 - `error`: Any error that occurred
 
 **Example:**
+
 ```go
-err := lit.InsertGenericExistingUuid(db, &session)
+err := lit.InsertExistingUuid(db, &session)
 ```
 
 ### InsertNative
@@ -184,11 +205,13 @@ func InsertNative(ex Executor, query string, args ...any) (int, error)
 ```
 
 **Parameters:**
+
 - `ex`: Database connection or transaction
 - `query`: SQL INSERT query
 - `args`: Query parameters
 
 **Returns:**
+
 - `int`: Last inserted ID
 - `error`: Any error that occurred
 
@@ -201,15 +224,18 @@ func Update[T any](ex Executor, t *T, where string, args ...any) error
 ```
 
 **Parameters:**
+
 - `ex`: Database connection or transaction
 - `t`: Pointer to the struct with updated values
 - `where`: WHERE clause (required, cannot be empty)
 - `args`: WHERE clause parameters
 
 **Returns:**
+
 - `error`: Any error that occurred
 
 **Example:**
+
 ```go
 err := lit.Update(db, &user, "id = $1", user.Id)
 ```
@@ -223,6 +249,7 @@ func UpdateNative(ex Executor, query string, args ...any) error
 ```
 
 **Parameters:**
+
 - `ex`: Database connection or transaction
 - `query`: SQL UPDATE query
 - `args`: Query parameters
@@ -236,11 +263,13 @@ func Delete(ex Executor, query string, args ...any) error
 ```
 
 **Parameters:**
+
 - `ex`: Database connection or transaction
 - `query`: SQL DELETE query
 - `args`: Query parameters
 
 **Example:**
+
 ```go
 err := lit.Delete(db, "DELETE FROM users WHERE id = $1", 123)
 ```
@@ -256,6 +285,7 @@ func JoinForIn(ids []int) string
 ```
 
 **Example:**
+
 ```go
 ids := []int{1, 2, 3}
 query := "SELECT * FROM users WHERE id IN (" + lit.JoinForIn(ids) + ")"
@@ -271,10 +301,12 @@ func JoinStringForIn[T any](offset int, params []string) string
 ```
 
 **Parameters:**
+
 - `offset`: Starting parameter number (for PostgreSQL)
 - `params`: Slice of values (used to determine count)
 
 **Example:**
+
 ```go
 emails := []string{"a@test.com", "b@test.com"}
 placeholders := lit.JoinStringForIn[User](0, emails)
@@ -291,6 +323,7 @@ func JoinStringForInWithDriver(driver Driver, offset int, count int) string
 ```
 
 **Example:**
+
 ```go
 placeholders := lit.JoinStringForInWithDriver(lit.PostgreSQL, 2, 3)
 // Result: $3,$4,$5

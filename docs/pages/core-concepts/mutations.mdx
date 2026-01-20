@@ -32,12 +32,12 @@ The INSERT query is pre-generated during registration, so this operation has min
 
 For models with string/UUID IDs, use one of these functions:
 
-### InsertGenericUuid
+### InsertUuid
 
 Generates a new UUID automatically:
 
 ```go
-func InsertGenericUuid[T any](ex Executor, t *T) (string, error)
+func InsertUuid[T any](ex Executor, t *T) (string, error)
 ```
 
 ```go
@@ -54,17 +54,17 @@ session := Session{
     ExpiresAt: time.Now().Add(24 * time.Hour),
 }
 
-uuid, err := lit.InsertGenericUuid(db, &session)
+uuid, err := lit.InsertUuid(db, &session)
 // uuid = "550e8400-e29b-41d4-a716-446655440000"
 // session.Id is also set to this value
 ```
 
-### InsertGenericExistingUuid
+### InsertExistingUuid
 
 Use when you already have a UUID:
 
 ```go
-func InsertGenericExistingUuid[T any](ex Executor, t *T) error
+func InsertExistingUuid[T any](ex Executor, t *T) error
 ```
 
 ```go
@@ -74,7 +74,7 @@ session := Session{
     ExpiresAt: time.Now().Add(24 * time.Hour),
 }
 
-err := lit.InsertGenericExistingUuid(db, &session)
+err := lit.InsertExistingUuid(db, &session)
 ```
 
 See [UUID Support](/guides/uuid-support) for more details.

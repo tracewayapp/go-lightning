@@ -1044,7 +1044,7 @@ func TestInsert(t *testing.T) {
 	}
 }
 
-func TestInsertGenericUuid(t *testing.T) {
+func TestInsertUuid(t *testing.T) {
 	Register[TestUuidEntity](DefaultDbNamingStrategy{}, mockQueryGenerator{})
 
 	entity := &TestUuidEntity{Name: "Test", Description: "Description"}
@@ -1055,7 +1055,7 @@ func TestInsertGenericUuid(t *testing.T) {
 	mock.ExpectExec("INSERT INTO (.+)").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	uuidStr, err := InsertGenericUuid[TestUuidEntity](tx, entity)
+	uuidStr, err := InsertUuid[TestUuidEntity](tx, entity)
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, uuidStr)
@@ -1070,7 +1070,7 @@ func TestInsertGenericUuid(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestInsertGenericExistingUuid(t *testing.T) {
+func TestInsertExistingUuid(t *testing.T) {
 	Register[TestUuidEntity](DefaultDbNamingStrategy{}, mockQueryGenerator{})
 
 	existingUuid := uuid.New().String()
@@ -1082,7 +1082,7 @@ func TestInsertGenericExistingUuid(t *testing.T) {
 	mock.ExpectExec("INSERT INTO (.+)").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err := InsertGenericExistingUuid[TestUuidEntity](tx, entity)
+	err := InsertExistingUuid[TestUuidEntity](tx, entity)
 
 	assert.NoError(t, err)
 	assert.Equal(t, existingUuid, entity.Id)
