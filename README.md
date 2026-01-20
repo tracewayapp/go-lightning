@@ -25,7 +25,7 @@ Documentation is available at https://tracewayapp.github.io/go-lightning
 
 ## Usage Limitations
 
-- **ID Column Requirement**: For automatic `InsertGeneric` and `UpdateGeneric` operations, the library requires your tables to have an `id` column. It does not support tables without a primary `id` field for these specific automatic operations.
+- **ID Column Requirement**: For automatic `Insert` and `Update` operations, the library requires your tables to have an `id` column. It does not support tables without a primary `id` field for these specific automatic operations.
 
 ## Installation
 
@@ -67,17 +67,17 @@ import (
 
 func example(db *sql.DB) {
     // Insert - returns auto-generated ID
-    id, _ := lit.InsertGeneric(db, &User{FirstName: "Jane", LastName: "Smith"})
+    id, _ := lit.Insert(db, &User{FirstName: "Jane", LastName: "Smith"})
 
     // Select Single
-    user, _ := lit.SelectGenericSingle[User](db, "SELECT * FROM users WHERE id = $1", id)
+    user, _ := lit.SelectSingle[User](db, "SELECT * FROM users WHERE id = $1", id)
 
     // Select Multiple
-    users, _ := lit.SelectGeneric[User](db, "SELECT * FROM users WHERE last_name = $1", "Smith")
+    users, _ := lit.Select[User](db, "SELECT * FROM users WHERE last_name = $1", "Smith")
 
     // Update
     user.Email = "jane@example.com"
-    _ = lit.UpdateGeneric(db, user, "id = $1", user.Id)
+    _ = lit.Update(db, user, "id = $1", user.Id)
 
     // Delete
     _ = lit.Delete(db, "DELETE FROM users WHERE id = $1", user.Id)
@@ -94,17 +94,17 @@ import (
 
 func example(db *sql.DB) {
     // Insert
-    id, _ := lit.InsertGeneric(db, &User{FirstName: "John", LastName: "Doe"})
+    id, _ := lit.Insert(db, &User{FirstName: "John", LastName: "Doe"})
 
     // Select Single
-    user, _ := lit.SelectGenericSingle[User](db, "SELECT * FROM users WHERE id = ?", id)
+    user, _ := lit.SelectSingle[User](db, "SELECT * FROM users WHERE id = ?", id)
 
     // Select Multiple
-    users, _ := lit.SelectGeneric[User](db, "SELECT * FROM users WHERE last_name = ?", "Doe")
+    users, _ := lit.Select[User](db, "SELECT * FROM users WHERE last_name = ?", "Doe")
 
     // Update
     user.Email = "john@example.com"
-    _ = lit.UpdateGeneric(db, user, "id = ?", user.Id)
+    _ = lit.Update(db, user, "id = ?", user.Id)
 
     // Delete
     _ = lit.Delete(db, "DELETE FROM users WHERE id = ?", user.Id)
@@ -124,12 +124,12 @@ func exampleWithTx(db *sql.DB) error {
     defer tx.Rollback()
 
     // All operations accept tx
-    id, err := lit.InsertGeneric(tx, &User{FirstName: "John"})
+    id, err := lit.Insert(tx, &User{FirstName: "John"})
     if err != nil {
         return err
     }
 
-    user, err := lit.SelectGenericSingle[User](tx, "SELECT * FROM users WHERE id = $1", id)
+    user, err := lit.SelectSingle[User](tx, "SELECT * FROM users WHERE id = $1", id)
     if err != nil {
         return err
     }

@@ -73,7 +73,7 @@ func SelectMultipleNative[T any](tx *sql.Tx, mapLine func(*sql.Rows, *T) error, 
 	}
 	return list, nil
 }
-func SelectSingle[T any](tx *sql.Tx, mapLine func(*sql.Rows, *T) error, query string, args ...any) (*T, error) {
+func SelectSingleNative[T any](tx *sql.Tx, mapLine func(*sql.Rows, *T) error, query string, args ...any) (*T, error) {
 	rows, err := tx.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -174,7 +174,7 @@ func InsertGenericUuid[T any](tx *sql.Tx, t *T) (string, error) {
 	return newUuidString, nil
 }
 
-func UpdateGeneric[T any](tx *sql.Tx, t *T, where string, args ...any) error {
+func Update[T any](tx *sql.Tx, t *T, where string, args ...any) error {
 	if len(where) == 0 {
 		return errors.New("parameter 'where' was not present")
 	}
@@ -200,9 +200,9 @@ func UpdateGeneric[T any](tx *sql.Tx, t *T, where string, args ...any) error {
 	return nil
 }
 
-func SelectGenericSingle[T any](tx *sql.Tx, query string, args ...any) (*T, error) {
+func SelectSingle[T any](tx *sql.Tx, query string, args ...any) (*T, error) {
 
-	l, err := SelectGeneric[T](tx, query, args...)
+	l, err := Select[T](tx, query, args...)
 
 	if err != nil {
 		return nil, err
@@ -214,7 +214,7 @@ func SelectGenericSingle[T any](tx *sql.Tx, query string, args ...any) (*T, erro
 	return nil, nil
 }
 
-func SelectGeneric[T any](tx *sql.Tx, query string, args ...any) ([]*T, error) {
+func Select[T any](tx *sql.Tx, query string, args ...any) ([]*T, error) {
 	rows, err := tx.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -251,7 +251,7 @@ func SelectGeneric[T any](tx *sql.Tx, query string, args ...any) ([]*T, error) {
 	return list, nil
 }
 
-func InsertGeneric[T any](tx *sql.Tx, t *T) (int, error) {
+func Insert[T any](tx *sql.Tx, t *T) (int, error) {
 	tType := reflect.TypeOf(*t)
 	fieldMap, err := GetFieldMap(tType)
 	if err != nil {

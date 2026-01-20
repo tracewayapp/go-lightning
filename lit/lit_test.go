@@ -329,7 +329,7 @@ func TestPgRenumberPlaceholders(t *testing.T) {
 	}
 }
 
-func TestSelectGeneric_PostgreSQL(t *testing.T) {
+func TestSelect_PostgreSQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](PostgreSQL)
 
@@ -343,7 +343,7 @@ func TestSelectGeneric_PostgreSQL(t *testing.T) {
 
 	mock.ExpectQuery("SELECT \\* FROM test_users").WillReturnRows(rows)
 
-	users, err := SelectGeneric[TestUser](db, "SELECT * FROM test_users")
+	users, err := Select[TestUser](db, "SELECT * FROM test_users")
 	require.NoError(t, err)
 	assert.Len(t, users, 2)
 	assert.Equal(t, "John", users[0].FirstName)
@@ -352,7 +352,7 @@ func TestSelectGeneric_PostgreSQL(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestSelectGeneric_MySQL(t *testing.T) {
+func TestSelect_MySQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](MySQL)
 
@@ -366,7 +366,7 @@ func TestSelectGeneric_MySQL(t *testing.T) {
 
 	mock.ExpectQuery("SELECT \\* FROM test_users").WillReturnRows(rows)
 
-	users, err := SelectGeneric[TestUser](db, "SELECT * FROM test_users")
+	users, err := Select[TestUser](db, "SELECT * FROM test_users")
 	require.NoError(t, err)
 	assert.Len(t, users, 2)
 	assert.Equal(t, "John", users[0].FirstName)
@@ -375,7 +375,7 @@ func TestSelectGeneric_MySQL(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestSelectGenericSingle_PostgreSQL(t *testing.T) {
+func TestSelectSingle_PostgreSQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](PostgreSQL)
 
@@ -390,7 +390,7 @@ func TestSelectGenericSingle_PostgreSQL(t *testing.T) {
 		WithArgs(1).
 		WillReturnRows(rows)
 
-	user, err := SelectGenericSingle[TestUser](db, "SELECT * FROM test_users WHERE id = $1", 1)
+	user, err := SelectSingle[TestUser](db, "SELECT * FROM test_users WHERE id = $1", 1)
 	require.NoError(t, err)
 	require.NotNil(t, user)
 	assert.Equal(t, "John", user.FirstName)
@@ -398,7 +398,7 @@ func TestSelectGenericSingle_PostgreSQL(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestSelectGenericSingle_MySQL(t *testing.T) {
+func TestSelectSingle_MySQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](MySQL)
 
@@ -413,7 +413,7 @@ func TestSelectGenericSingle_MySQL(t *testing.T) {
 		WithArgs(1).
 		WillReturnRows(rows)
 
-	user, err := SelectGenericSingle[TestUser](db, "SELECT * FROM test_users WHERE id = ?", 1)
+	user, err := SelectSingle[TestUser](db, "SELECT * FROM test_users WHERE id = ?", 1)
 	require.NoError(t, err)
 	require.NotNil(t, user)
 	assert.Equal(t, "John", user.FirstName)
@@ -421,7 +421,7 @@ func TestSelectGenericSingle_MySQL(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestSelectGenericSingle_NoResults_PostgreSQL(t *testing.T) {
+func TestSelectSingle_NoResults_PostgreSQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](PostgreSQL)
 
@@ -435,14 +435,14 @@ func TestSelectGenericSingle_NoResults_PostgreSQL(t *testing.T) {
 		WithArgs(999).
 		WillReturnRows(rows)
 
-	user, err := SelectGenericSingle[TestUser](db, "SELECT * FROM test_users WHERE id = $1", 999)
+	user, err := SelectSingle[TestUser](db, "SELECT * FROM test_users WHERE id = $1", 999)
 	require.NoError(t, err)
 	assert.Nil(t, user)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestSelectGenericSingle_NoResults_MySQL(t *testing.T) {
+func TestSelectSingle_NoResults_MySQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](MySQL)
 
@@ -456,14 +456,14 @@ func TestSelectGenericSingle_NoResults_MySQL(t *testing.T) {
 		WithArgs(999).
 		WillReturnRows(rows)
 
-	user, err := SelectGenericSingle[TestUser](db, "SELECT * FROM test_users WHERE id = ?", 999)
+	user, err := SelectSingle[TestUser](db, "SELECT * FROM test_users WHERE id = ?", 999)
 	require.NoError(t, err)
 	assert.Nil(t, user)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestInsertGeneric_PostgreSQL(t *testing.T) {
+func TestInsert_PostgreSQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](PostgreSQL)
 
@@ -478,14 +478,14 @@ func TestInsertGeneric_PostgreSQL(t *testing.T) {
 		WillReturnRows(rows)
 
 	user := &TestUser{FirstName: "John", LastName: "Doe", Email: "john@example.com"}
-	id, err := InsertGeneric[TestUser](db, user)
+	id, err := Insert[TestUser](db, user)
 	require.NoError(t, err)
 	assert.Equal(t, 42, id)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestInsertGeneric_MySQL(t *testing.T) {
+func TestInsert_MySQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](MySQL)
 
@@ -498,14 +498,14 @@ func TestInsertGeneric_MySQL(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(42, 1))
 
 	user := &TestUser{FirstName: "John", LastName: "Doe", Email: "john@example.com"}
-	id, err := InsertGeneric[TestUser](db, user)
+	id, err := Insert[TestUser](db, user)
 	require.NoError(t, err)
 	assert.Equal(t, 42, id)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUpdateGeneric_PostgreSQL(t *testing.T) {
+func TestUpdate_PostgreSQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](PostgreSQL)
 
@@ -518,13 +518,13 @@ func TestUpdateGeneric_PostgreSQL(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	user := &TestUser{Id: 1, FirstName: "John", LastName: "Doe", Email: "john@example.com"}
-	err = UpdateGeneric[TestUser](db, user, "id = $1", 1)
+	err = Update[TestUser](db, user, "id = $1", 1)
 	require.NoError(t, err)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUpdateGeneric_MySQL(t *testing.T) {
+func TestUpdate_MySQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](MySQL)
 
@@ -537,13 +537,13 @@ func TestUpdateGeneric_MySQL(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	user := &TestUser{Id: 1, FirstName: "John", LastName: "Doe", Email: "john@example.com"}
-	err = UpdateGeneric[TestUser](db, user, "id = ?", 1)
+	err = Update[TestUser](db, user, "id = ?", 1)
 	require.NoError(t, err)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUpdateGeneric_NoWhere(t *testing.T) {
+func TestUpdate_NoWhere(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](PostgreSQL)
 
@@ -552,7 +552,7 @@ func TestUpdateGeneric_NoWhere(t *testing.T) {
 	defer db.Close()
 
 	user := &TestUser{Id: 1, FirstName: "John", LastName: "Doe", Email: "john@example.com"}
-	err = UpdateGeneric[TestUser](db, user, "")
+	err = Update[TestUser](db, user, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "where")
 }
@@ -606,7 +606,7 @@ func TestExecutorWithTransaction_PostgreSQL(t *testing.T) {
 	tx, err := db.Begin()
 	require.NoError(t, err)
 
-	users, err := SelectGeneric[TestUser](tx, "SELECT * FROM test_users")
+	users, err := Select[TestUser](tx, "SELECT * FROM test_users")
 	require.NoError(t, err)
 	assert.Len(t, users, 1)
 
@@ -635,7 +635,7 @@ func TestExecutorWithTransaction_MySQL(t *testing.T) {
 	tx, err := db.Begin()
 	require.NoError(t, err)
 
-	users, err := SelectGeneric[TestUser](tx, "SELECT * FROM test_users")
+	users, err := Select[TestUser](tx, "SELECT * FROM test_users")
 	require.NoError(t, err)
 	assert.Len(t, users, 1)
 

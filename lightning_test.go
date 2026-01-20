@@ -364,7 +364,7 @@ func TestSelectMultipleNative(t *testing.T) {
 	}
 }
 
-func TestSelectSingle(t *testing.T) {
+func TestSelectSingleNative(t *testing.T) {
 	tests := []struct {
 		name          string
 		query         string
@@ -477,7 +477,7 @@ func TestSelectSingle(t *testing.T) {
 
 			tt.setupMock(mock)
 
-			result, err := SelectSingle[TestUser](tx, mapTestUser, tt.query, tt.args...)
+			result, err := SelectSingleNative[TestUser](tx, mapTestUser, tt.query, tt.args...)
 
 			if tt.expectedError {
 				assert.Error(t, err)
@@ -856,7 +856,7 @@ func (m mockQueryGenerator) GenerateUpdateQuery(tableName string, columnKeys []s
 	return updateQuery.String()
 }
 
-func TestSelectGenericSingle(t *testing.T) {
+func TestSelectSingle(t *testing.T) {
 	Register[TestUser](DefaultDbNamingStrategy{}, mockQueryGenerator{})
 
 	tests := []struct {
@@ -908,7 +908,7 @@ func TestSelectGenericSingle(t *testing.T) {
 
 			tt.setupMock(mock)
 
-			result, err := SelectGenericSingle[TestUser](tx, tt.query, tt.args...)
+			result, err := SelectSingle[TestUser](tx, tt.query, tt.args...)
 
 			if tt.expectedError {
 				assert.Error(t, err)
@@ -927,7 +927,7 @@ func TestSelectGenericSingle(t *testing.T) {
 	}
 }
 
-func TestSelectGeneric(t *testing.T) {
+func TestSelect(t *testing.T) {
 	Register[TestUser](DefaultDbNamingStrategy{}, mockQueryGenerator{})
 
 	tests := []struct {
@@ -979,7 +979,7 @@ func TestSelectGeneric(t *testing.T) {
 
 			tt.setupMock(mock)
 
-			result, err := SelectGeneric[TestUser](tx, tt.query, tt.args...)
+			result, err := Select[TestUser](tx, tt.query, tt.args...)
 
 			if tt.expectedError {
 				assert.Error(t, err)
@@ -993,7 +993,7 @@ func TestSelectGeneric(t *testing.T) {
 	}
 }
 
-func TestInsertGeneric(t *testing.T) {
+func TestInsert(t *testing.T) {
 	Register[TestUser](DefaultDbNamingStrategy{}, mockQueryGenerator{})
 
 	tests := []struct {
@@ -1030,7 +1030,7 @@ func TestInsertGeneric(t *testing.T) {
 
 			tt.setupMock(mock)
 
-			id, err := InsertGeneric[TestUser](tx, tt.user)
+			id, err := Insert[TestUser](tx, tt.user)
 
 			if tt.expectedError {
 				assert.Error(t, err)
@@ -1090,7 +1090,7 @@ func TestInsertGenericExistingUuid(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUpdateGeneric(t *testing.T) {
+func TestUpdate(t *testing.T) {
 	Register[TestUser](DefaultDbNamingStrategy{}, mockQueryGenerator{})
 
 	tests := []struct {
@@ -1141,7 +1141,7 @@ func TestUpdateGeneric(t *testing.T) {
 
 			tt.setupMock(mock)
 
-			err := UpdateGeneric[TestUser](tx, tt.user, tt.where, tt.args...)
+			err := Update[TestUser](tx, tt.user, tt.where, tt.args...)
 
 			if tt.expectedError {
 				assert.Error(t, err)

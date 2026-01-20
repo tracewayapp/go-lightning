@@ -28,7 +28,7 @@ func GetPointersForColumns[T any](columns []string, fieldMap *FieldMap, t *T) *[
 	return &dest
 }
 
-func SelectGeneric[T any](ex Executor, query string, args ...any) ([]*T, error) {
+func Select[T any](ex Executor, query string, args ...any) ([]*T, error) {
 	rows, err := ex.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -64,8 +64,8 @@ func SelectGeneric[T any](ex Executor, query string, args ...any) ([]*T, error) 
 	return list, nil
 }
 
-func SelectGenericSingle[T any](ex Executor, query string, args ...any) (*T, error) {
-	l, err := SelectGeneric[T](ex, query, args...)
+func SelectSingle[T any](ex Executor, query string, args ...any) (*T, error) {
+	l, err := Select[T](ex, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func SelectGenericSingle[T any](ex Executor, query string, args ...any) (*T, err
 	return nil, nil
 }
 
-func InsertGeneric[T any](ex Executor, t *T) (int, error) {
+func Insert[T any](ex Executor, t *T) (int, error) {
 	tType := reflect.TypeOf(*t)
 	fieldMap, err := GetFieldMap(tType)
 	if err != nil {
@@ -132,7 +132,7 @@ func InsertGenericExistingUuid[T any](ex Executor, t *T) error {
 	return err
 }
 
-func UpdateGeneric[T any](ex Executor, t *T, where string, args ...any) error {
+func Update[T any](ex Executor, t *T, where string, args ...any) error {
 	if len(where) == 0 {
 		return errors.New("parameter 'where' was not present")
 	}

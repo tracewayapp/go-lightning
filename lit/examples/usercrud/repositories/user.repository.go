@@ -12,19 +12,19 @@ import (
 type userRepository struct{}
 
 func (userRepository *userRepository) Create(db *sql.DB, user models.User) (int, error) {
-	return lit.InsertGeneric(db, &user)
+	return lit.Insert(db, &user)
 }
 
 func (userRepository *userRepository) FindById(db *sql.DB, id int) (*models.User, error) {
-	return lit.SelectGenericSingle[models.User](db, "SELECT id, first_name, last_name, email FROM users WHERE id = $1", id)
+	return lit.SelectSingle[models.User](db, "SELECT id, first_name, last_name, email FROM users WHERE id = $1", id)
 }
 
 func (userRepository *userRepository) FindAll(db *sql.DB) ([]*models.User, error) {
-	return lit.SelectGeneric[models.User](db, "SELECT id, first_name, last_name, email FROM users")
+	return lit.Select[models.User](db, "SELECT id, first_name, last_name, email FROM users")
 }
 
 func (userRepository *userRepository) Update(db *sql.DB, user models.User) error {
-	return lit.UpdateGeneric(db, &user, "id = $1", user.Id)
+	return lit.Update(db, &user, "id = $1", user.Id)
 }
 
 func (userRepository *userRepository) Delete(db *sql.DB, id int) error {
