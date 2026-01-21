@@ -163,7 +163,7 @@ We welcome all contributions to the go-lightning project. You can open issues or
 - [x] ~~Add support for ClickHouse - we're not doing this as clickhouse has a driver that is basically already doing this~~
 - [x] ~~Add more examples - the usercrud example is mostly complete - we'll add more if we get a git issue filed to do so~~
 - [x] ~~Add project docs~~
-- [ ] Add support for named fields `db:"column_name"` (this can be done by using a naming strategy currently)
+- [ ] Add support for named fields `lit:"column_name"` (this can be done by using a naming strategy currently)
 - [ ] Named query parameters
 - [ ] Add a project homepage
 - [ ] Add support for composite primary keys
