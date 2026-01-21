@@ -929,6 +929,62 @@ func TestSelect_WithLitTags_MySQL(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Tests for pgEscapeReserved function
+func TestPgEscapeReserved(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Non-reserved names should pass through unchanged
+		{"non-reserved name", "users", "users"},
+		{"non-reserved name with underscore", "user_profiles", "user_profiles"},
+		{"non-reserved name camelCase", "firstName", "firstName"},
+
+		// Reserved keywords should be quoted (case-insensitive)
+		{"reserved keyword uppercase", "SELECT", `"SELECT"`},
+		{"reserved keyword lowercase", "select", `"select"`},
+		{"reserved keyword mixed case", "Select", `"Select"`},
+
+		// Common reserved keywords
+		{"reserved ORDER", "ORDER", `"ORDER"`},
+		{"reserved order lowercase", "order", `"order"`},
+		{"reserved GROUP", "GROUP", `"GROUP"`},
+		{"reserved TABLE", "TABLE", `"TABLE"`},
+		{"reserved INDEX", "INDEX", `"INDEX"`},
+		{"reserved KEY", "KEY", `"KEY"`},
+		{"reserved USER", "USER", `"USER"`},
+		{"reserved user lowercase", "user", `"user"`},
+
+		// Name with double quote (not reserved, so no quoting but escaping would happen if reserved)
+		{"non-reserved with quote", `my"column`, `my"column`},
+
+		// Edge cases
+		{"empty string", "", ""},
+		{"single char non-reserved", "x", "x"},
+		{"reserved AS", "AS", `"AS"`},
+		{"reserved FROM", "FROM", `"FROM"`},
+		{"reserved WHERE", "WHERE", `"WHERE"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := pgEscapeReserved(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Test that reserved keywords with embedded quotes are properly escaped
+func TestPgEscapeReserved_WithQuotes(t *testing.T) {
+	// If a reserved keyword somehow contains a double quote, it should be escaped
+	// This is an edge case but tests the quote escaping logic
+	// Note: The escaping happens but since we check the original value for reserved status,
+	// a name like `SEL"ECT` won't match the reserved keyword `SELECT`
+	result := pgEscapeReserved(`my"table`)
+	assert.Equal(t, `my"table`, result) // Not reserved, so unchanged
+}
+
 func TestSelectSingle_WithLitTags_PostgreSQL(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUserWithTags]())
 	RegisterModel[TestUserWithTags](PostgreSQL)
@@ -952,6 +1008,312 @@ func TestSelectSingle_WithLitTags_PostgreSQL(t *testing.T) {
 	assert.Equal(t, "John", user.FirstName)
 	assert.Equal(t, "Doe", user.LastName)
 	assert.Equal(t, "john@example.com", user.Email)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Tests for mysqlEscapeReserved function
+func TestMysqlEscapeReserved(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Non-reserved names should pass through unchanged
+		{"non-reserved name", "users", "users"},
+		{"non-reserved name with underscore", "user_profiles", "user_profiles"},
+		{"non-reserved name camelCase", "firstName", "firstName"},
+
+		// Reserved keywords should be quoted with backticks (case-insensitive)
+		{"reserved keyword uppercase", "SELECT", "`SELECT`"},
+		{"reserved keyword lowercase", "select", "`select`"},
+		{"reserved keyword mixed case", "Select", "`Select`"},
+
+		// Common reserved keywords
+		{"reserved ORDER", "ORDER", "`ORDER`"},
+		{"reserved order lowercase", "order", "`order`"},
+		{"reserved GROUP", "GROUP", "`GROUP`"},
+		{"reserved TABLE", "TABLE", "`TABLE`"},
+		{"reserved INDEX", "INDEX", "`INDEX`"},
+		{"reserved KEY", "KEY", "`KEY`"},
+		{"reserved USER", "USER", "`USER`"},
+		{"reserved user lowercase", "user", "`user`"},
+
+		// Name with backtick (not reserved, so no quoting)
+		{"non-reserved with backtick", "my`column", "my`column"},
+
+		// Edge cases
+		{"empty string", "", ""},
+		{"single char non-reserved", "x", "x"},
+		{"reserved AS", "AS", "`AS`"},
+		{"reserved FROM", "FROM", "`FROM`"},
+		{"reserved WHERE", "WHERE", "`WHERE`"},
+
+		// MySQL-specific reserved keywords
+		{"reserved DUAL", "DUAL", "`DUAL`"},
+		{"reserved FULLTEXT", "FULLTEXT", "`FULLTEXT`"},
+		{"reserved KILL", "KILL", "`KILL`"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := mysqlEscapeReserved(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Test that non-reserved names with backticks are unchanged
+func TestMysqlEscapeReserved_WithBackticks(t *testing.T) {
+	result := mysqlEscapeReserved("my`table")
+	assert.Equal(t, "my`table", result) // Not reserved, so unchanged
+}
+
+// Test struct with reserved keyword column names
+type TestReservedKeywordModel struct {
+	Id    int
+	Order int    `lit:"order"` // Reserved keyword
+	Group string `lit:"group"` // Reserved keyword
+	Name  string
+}
+
+// Integration tests for PostgreSQL query generation with reserved keywords
+func TestPgInsertUpdateQueryGenerator_ReservedKeywords(t *testing.T) {
+	gen := PgInsertUpdateQueryGenerator{}
+
+	t.Run("INSERT with reserved keyword columns", func(t *testing.T) {
+		columnKeys := []string{"id", "order", "group", "name"}
+		query, columns := gen.GenerateInsertQuery("test_table", columnKeys, true)
+
+		// Reserved keywords should be quoted (NAME is also reserved in PostgreSQL)
+		assert.Contains(t, query, `"order"`)
+		assert.Contains(t, query, `"group"`)
+		assert.Contains(t, query, `"name"`)
+		// Non-reserved should not be quoted
+		assert.Contains(t, query, "id")
+		assert.Equal(t, []string{"order", "group", "name"}, columns)
+	})
+
+	t.Run("INSERT with reserved keyword table name", func(t *testing.T) {
+		columnKeys := []string{"id", "value"}
+		query, _ := gen.GenerateInsertQuery("user", columnKeys, true)
+
+		// Reserved table name should be quoted
+		assert.Contains(t, query, `INSERT INTO "user"`)
+	})
+
+	t.Run("UPDATE with reserved keyword columns", func(t *testing.T) {
+		columnKeys := []string{"id", "order", "group", "name"}
+		query := gen.GenerateUpdateQuery("test_table", columnKeys)
+
+		// Reserved keywords should be quoted (NAME is also reserved in PostgreSQL)
+		assert.Contains(t, query, `"order" = $2`)
+		assert.Contains(t, query, `"group" = $3`)
+		assert.Contains(t, query, `"name" = $4`)
+		// Non-reserved should not be quoted
+		assert.Contains(t, query, "id = $1")
+	})
+
+	t.Run("UPDATE with reserved keyword table name", func(t *testing.T) {
+		columnKeys := []string{"id", "value"}
+		query := gen.GenerateUpdateQuery("order", columnKeys)
+
+		// Reserved table name should be quoted
+		assert.Contains(t, query, `UPDATE "order"`)
+	})
+}
+
+// Integration tests for MySQL query generation with reserved keywords
+func TestMySqlInsertUpdateQueryGenerator_ReservedKeywords(t *testing.T) {
+	gen := MySqlInsertUpdateQueryGenerator{}
+
+	t.Run("INSERT with reserved keyword columns", func(t *testing.T) {
+		columnKeys := []string{"id", "order", "group", "name"}
+		query, columns := gen.GenerateInsertQuery("test_table", columnKeys, true)
+
+		// Reserved keywords should be quoted with backticks (NAME is also reserved in MySQL)
+		assert.Contains(t, query, "`order`")
+		assert.Contains(t, query, "`group`")
+		assert.Contains(t, query, "`name`")
+		// Non-reserved should not be quoted
+		assert.Contains(t, query, "id")
+		assert.Equal(t, []string{"order", "group", "name"}, columns)
+	})
+
+	t.Run("INSERT with reserved keyword table name", func(t *testing.T) {
+		columnKeys := []string{"id", "value"}
+		query, _ := gen.GenerateInsertQuery("user", columnKeys, true)
+
+		// Reserved table name should be quoted with backticks
+		assert.Contains(t, query, "INSERT INTO `user`")
+	})
+
+	t.Run("UPDATE with reserved keyword columns", func(t *testing.T) {
+		columnKeys := []string{"id", "order", "group", "name"}
+		query := gen.GenerateUpdateQuery("test_table", columnKeys)
+
+		// Reserved keywords should be quoted with backticks (NAME is also reserved in MySQL)
+		assert.Contains(t, query, "`order` = ?")
+		assert.Contains(t, query, "`group` = ?")
+		assert.Contains(t, query, "`name` = ?")
+		// Non-reserved should not be quoted
+		assert.Contains(t, query, "id = ?")
+	})
+
+	t.Run("UPDATE with reserved keyword table name", func(t *testing.T) {
+		columnKeys := []string{"id", "value"}
+		query := gen.GenerateUpdateQuery("order", columnKeys)
+
+		// Reserved table name should be quoted with backticks
+		assert.Contains(t, query, "UPDATE `order`")
+	})
+}
+
+// Full integration test: Insert with reserved keyword columns using PostgreSQL
+func TestInsert_WithReservedKeywords_PostgreSQL(t *testing.T) {
+	delete(StructToFieldMap, reflect.TypeFor[TestReservedKeywordModel]())
+	RegisterModel[TestReservedKeywordModel](PostgreSQL)
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	rows := sqlmock.NewRows([]string{"id"}).AddRow(42)
+
+	// Expect INSERT with escaped reserved keywords (NAME is also reserved in PostgreSQL)
+	mock.ExpectQuery(`INSERT INTO test_reserved_keyword_models \(id,"order","group","name"\)`).
+		WithArgs(10, "TestGroup", "TestName").
+		WillReturnRows(rows)
+
+	model := &TestReservedKeywordModel{Order: 10, Group: "TestGroup", Name: "TestName"}
+	id, err := Insert[TestReservedKeywordModel](db, model)
+	require.NoError(t, err)
+	assert.Equal(t, 42, id)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Full integration test: Insert with reserved keyword columns using MySQL
+func TestInsert_WithReservedKeywords_MySQL(t *testing.T) {
+	delete(StructToFieldMap, reflect.TypeFor[TestReservedKeywordModel]())
+	RegisterModel[TestReservedKeywordModel](MySQL)
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Expect INSERT with escaped reserved keywords using backticks (NAME is also reserved in MySQL)
+	mock.ExpectExec("INSERT INTO test_reserved_keyword_models \\(id,`order`,`group`,`name`\\)").
+		WithArgs(10, "TestGroup", "TestName").
+		WillReturnResult(sqlmock.NewResult(42, 1))
+
+	model := &TestReservedKeywordModel{Order: 10, Group: "TestGroup", Name: "TestName"}
+	id, err := Insert[TestReservedKeywordModel](db, model)
+	require.NoError(t, err)
+	assert.Equal(t, 42, id)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Full integration test: Update with reserved keyword columns using PostgreSQL
+func TestUpdate_WithReservedKeywords_PostgreSQL(t *testing.T) {
+	delete(StructToFieldMap, reflect.TypeFor[TestReservedKeywordModel]())
+	RegisterModel[TestReservedKeywordModel](PostgreSQL)
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Expect UPDATE with escaped reserved keywords (NAME is also reserved in PostgreSQL)
+	mock.ExpectExec(`UPDATE test_reserved_keyword_models SET id = \$1,"order" = \$2,"group" = \$3,"name" = \$4 WHERE`).
+		WithArgs(1, 10, "TestGroup", "TestName", 1).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	model := &TestReservedKeywordModel{Id: 1, Order: 10, Group: "TestGroup", Name: "TestName"}
+	err = Update[TestReservedKeywordModel](db, model, "id = $1", 1)
+	require.NoError(t, err)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Full integration test: Update with reserved keyword columns using MySQL
+func TestUpdate_WithReservedKeywords_MySQL(t *testing.T) {
+	delete(StructToFieldMap, reflect.TypeFor[TestReservedKeywordModel]())
+	RegisterModel[TestReservedKeywordModel](MySQL)
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Expect UPDATE with escaped reserved keywords using backticks (NAME is also reserved in MySQL)
+	mock.ExpectExec("UPDATE test_reserved_keyword_models SET id = \\?,`order` = \\?,`group` = \\?,`name` = \\? WHERE").
+		WithArgs(1, 10, "TestGroup", "TestName", 1).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	model := &TestReservedKeywordModel{Id: 1, Order: 10, Group: "TestGroup", Name: "TestName"}
+	err = Update[TestReservedKeywordModel](db, model, "id = ?", 1)
+	require.NoError(t, err)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Full integration test: Select with reserved keyword columns using PostgreSQL
+func TestSelect_WithReservedKeywords_PostgreSQL(t *testing.T) {
+	delete(StructToFieldMap, reflect.TypeFor[TestReservedKeywordModel]())
+	RegisterModel[TestReservedKeywordModel](PostgreSQL)
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Return rows with reserved keyword column names
+	rows := sqlmock.NewRows([]string{"id", "order", "group", "name"}).
+		AddRow(1, 10, "GroupA", "Name1").
+		AddRow(2, 20, "GroupB", "Name2")
+
+	mock.ExpectQuery("SELECT \\* FROM test_reserved_keyword_models").WillReturnRows(rows)
+
+	models, err := Select[TestReservedKeywordModel](db, "SELECT * FROM test_reserved_keyword_models")
+	require.NoError(t, err)
+	assert.Len(t, models, 2)
+
+	assert.Equal(t, 1, models[0].Id)
+	assert.Equal(t, 10, models[0].Order)
+	assert.Equal(t, "GroupA", models[0].Group)
+	assert.Equal(t, "Name1", models[0].Name)
+
+	assert.Equal(t, 2, models[1].Id)
+	assert.Equal(t, 20, models[1].Order)
+	assert.Equal(t, "GroupB", models[1].Group)
+	assert.Equal(t, "Name2", models[1].Name)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Full integration test: Select with reserved keyword columns using MySQL
+func TestSelect_WithReservedKeywords_MySQL(t *testing.T) {
+	delete(StructToFieldMap, reflect.TypeFor[TestReservedKeywordModel]())
+	RegisterModel[TestReservedKeywordModel](MySQL)
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Return rows with reserved keyword column names
+	rows := sqlmock.NewRows([]string{"id", "order", "group", "name"}).
+		AddRow(1, 10, "GroupA", "Name1").
+		AddRow(2, 20, "GroupB", "Name2")
+
+	mock.ExpectQuery("SELECT \\* FROM test_reserved_keyword_models").WillReturnRows(rows)
+
+	models, err := Select[TestReservedKeywordModel](db, "SELECT * FROM test_reserved_keyword_models")
+	require.NoError(t, err)
+	assert.Len(t, models, 2)
+
+	assert.Equal(t, 1, models[0].Id)
+	assert.Equal(t, 10, models[0].Order)
+	assert.Equal(t, "GroupA", models[0].Group)
+	assert.Equal(t, "Name1", models[0].Name)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
