@@ -31,14 +31,16 @@ func init() {
 
 ### Naming Conventions
 
-By default, struct fields are converted from CamelCase to snake_case:
+By default, struct fields are converted from CamelCase to snake_case. Consecutive uppercase letters (acronyms) are kept together:
 - `Id` -> `id`
 - `FirstName` -> `first_name`
-- `LastName` -> `last_name`
+- `UserID` -> `user_id`
+- `HTTPCode` -> `http_code`
 
 Table names are derived from struct names with snake_case and pluralized:
 - `User` -> `users`
 - `UserProfile` -> `user_profiles`
+- `HTTPRequest` -> `http_requests`
 
 ### Custom Column Names
 

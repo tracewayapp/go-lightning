@@ -1,33 +1,10 @@
-# Naming Strategies
+# Table & Column Naming
 
-go-lightning converts Go struct and field names to database table and column names using a naming strategy. The default converts CamelCase to snake_case, but you can customize this.
-
-## Default Naming Strategy
-
-The built-in `DefaultDbNamingStrategy` applies these rules:
-
-### Table Names
-
-Struct name → snake_case + "s"
-
-| Struct | Table |
-|--------|-------|
-| `User` | `users` |
-| `OrderItem` | `order_items` |
-| `HTTPRequest` | `h_t_t_p_requests` |
-
-### Column Names
-
-Field name → snake_case
-
-| Field | Column |
-|-------|--------|
-| `Id` | `id` |
-| `FirstName` | `first_name` |
-| `CreatedAt` | `created_at` |
-| `UserID` | `user_i_d` |
+go-lightning converts Go struct and field names to database table and column names using a naming strategy. The default converts CamelCase to snake_case, but you can customize this behavior.
 
 ## The DbNamingStrategy Interface
+
+All naming is controlled through this interface:
 
 ```go
 type DbNamingStrategy interface {
@@ -36,80 +13,209 @@ type DbNamingStrategy interface {
 }
 ```
 
-## Custom Naming Strategy
+The built-in `DefaultDbNamingStrategy` applies these rules:
 
-Implement the interface to create your own naming rules:
+- **Table names**: Struct name → snake_case + "s" (pluralized)
+- **Column names**: Field name → snake_case
 
-### Example: Prefix Tables
+---
+
+## Column Naming
+
+### Default Column Names
+
+Field names are converted from CamelCase to snake_case. Consecutive uppercase letters (acronyms) are kept together:
+
+| Field       | Column       |
+| ----------- | ------------ |
+| `Id`        | `id`         |
+| `FirstName` | `first_name` |
+| `CreatedAt` | `created_at` |
+| `UserID`    | `user_id`    |
+| `HTTPCode`  | `http_code`  |
+| `XMLData`   | `xml_data`   |
+
+### Custom Column Names with `lit` Tags
+
+The simplest way to override column names for specific fields is using the `lit` struct tag. This is useful when you need to map a few fields to non-standard column names without creating a full naming strategy.
 
 ```go
-type PrefixedNamingStrategy struct {
+type User struct {
+    Id        int    `lit:"id"`
+    FirstName string `lit:"first_name"`
+    LastName  string `lit:"surname"`       // Maps to "surname" instead of "last_name"
+    Email     string `lit:"email_address"` // Maps to "email_address" instead of "email"
+}
+```
+
+### Mixing Tagged and Untagged Fields
+
+You can use `lit` tags on only some fields. Fields without tags use the default snake_case conversion:
+
+```go
+type User struct {
+    Id          int                       // Uses default: "id"
+    FirstName   string `lit:"given_name"` // Uses tag: "given_name"
+    LastName    string                    // Uses default: "last_name"
+    PhoneNumber string `lit:"phone"`      // Uses tag: "phone"
+}
+```
+
+### When to Use `lit` Tags
+
+The `lit` tag is ideal for:
+
+- **Mapping to existing database columns** with non-standard names
+- **Quick overrides** when you only need to change a few column names
+- **Legacy database integration** where column names don't follow conventions
+
+The tag affects:
+
+- **INSERT queries**: Column names in the generated INSERT statement
+- **UPDATE queries**: Column names in the generated UPDATE statement
+- **SELECT queries**: Mapping database columns back to struct fields
+
+### Precedence
+
+The `lit` tag takes precedence over any naming strategy. If a field has a `lit` tag, that value is always used regardless of the registered naming strategy.
+
+```go
+type MyNamingStrategy struct{}
+
+func (MyNamingStrategy) GetColumnNameFromStructName(name string) string {
+    return strings.ToUpper(name) // Would return "FIRSTNAME"
+}
+
+func (MyNamingStrategy) GetTableNameFromStructName(name string) string {
+    return strings.ToLower(name) + "s"
+}
+
+type User struct {
+    FirstName string `lit:"fname"` // Uses "fname", not "FIRSTNAME"
+}
+
+lit.RegisterModelWithNaming[User](lit.PostgreSQL, MyNamingStrategy{})
+```
+
+### Custom Column Naming Strategy
+
+For full control over all column names, implement `GetColumnNameFromStructName`:
+
+```go
+type UppercaseColumnsStrategy struct{}
+
+func (UppercaseColumnsStrategy) GetTableNameFromStructName(name string) string {
+    return toSnakeCase(name) + "s" // Keep default table naming
+}
+
+func (UppercaseColumnsStrategy) GetColumnNameFromStructName(name string) string {
+    return strings.ToUpper(toSnakeCase(name)) // FIRST_NAME, LAST_NAME, etc.
+}
+
+// Usage
+lit.RegisterModelWithNaming[User](lit.PostgreSQL, UppercaseColumnsStrategy{})
+// FirstName → FIRST_NAME
+```
+
+---
+
+## Table Naming
+
+### Default Table Names
+
+Struct names are converted from CamelCase to snake_case and pluralized with "s". Consecutive uppercase letters (acronyms) are kept together:
+
+| Struct        | Table           |
+| ------------- | --------------- |
+| `User`        | `users`         |
+| `OrderItem`   | `order_items`   |
+| `HTTPRequest` | `http_requests` |
+| `UserID`      | `user_ids`      |
+| `OAuth2Token` | `oauth2_tokens` |
+
+### Custom Table Naming Strategy
+
+To customize how table names are derived, implement `GetTableNameFromStructName`:
+
+```go
+type PrefixedTableStrategy struct {
     Prefix string
 }
 
-func (s PrefixedNamingStrategy) GetTableNameFromStructName(name string) string {
+func (s PrefixedTableStrategy) GetTableNameFromStructName(name string) string {
     return s.Prefix + toSnakeCase(name) + "s"
 }
 
-func (s PrefixedNamingStrategy) GetColumnNameFromStructName(name string) string {
-    return toSnakeCase(name)
-}
-
-func toSnakeCase(s string) string {
-    var result strings.Builder
-    for i, r := range s {
-        if unicode.IsUpper(r) {
-            if i > 0 {
-                result.WriteRune('_')
-            }
-            result.WriteRune(unicode.ToLower(r))
-        } else {
-            result.WriteRune(r)
-        }
-    }
-    return result.String()
+func (s PrefixedTableStrategy) GetColumnNameFromStructName(name string) string {
+    return toSnakeCase(name) // Keep default column naming
 }
 
 // Usage
-lit.RegisterModelWithNaming[User](lit.PostgreSQL, PrefixedNamingStrategy{Prefix: "app_"})
+lit.RegisterModelWithNaming[User](lit.PostgreSQL, PrefixedTableStrategy{Prefix: "app_"})
 // User → app_users
 ```
 
-### Example: No Pluralization
+### Example: Singular Table Names (No Pluralization)
 
 ```go
-type SingularNamingStrategy struct{}
+type SingularTableStrategy struct{}
 
-func (SingularNamingStrategy) GetTableNameFromStructName(name string) string {
-    return toSnakeCase(name) // No "s" suffix
+func (SingularTableStrategy) GetTableNameFromStructName(name string) string {
+    return toSnakeCase(name) // No "s" suffix: User → user
 }
 
-func (SingularNamingStrategy) GetColumnNameFromStructName(name string) string {
+func (SingularTableStrategy) GetColumnNameFromStructName(name string) string {
     return toSnakeCase(name)
 }
 
 // Usage
-lit.RegisterModelWithNaming[User](lit.PostgreSQL, SingularNamingStrategy{})
-// User → user
+lit.RegisterModelWithNaming[User](lit.PostgreSQL, SingularTableStrategy{})
+// User → user (not "users")
 ```
 
-### Example: Uppercase Columns
+### Example: Exact Table Name
+
+When you need to map to a specific table name that doesn't follow any convention:
 
 ```go
-type UppercaseNamingStrategy struct{}
-
-func (UppercaseNamingStrategy) GetTableNameFromStructName(name string) string {
-    return strings.ToUpper(toSnakeCase(name)) + "S"
+type ExactTableStrategy struct {
+    TableName string
 }
 
-func (UppercaseNamingStrategy) GetColumnNameFromStructName(name string) string {
-    return strings.ToUpper(toSnakeCase(name))
+func (s ExactTableStrategy) GetTableNameFromStructName(name string) string {
+    return s.TableName // Use exact name provided
+}
+
+func (s ExactTableStrategy) GetColumnNameFromStructName(name string) string {
+    return toSnakeCase(name)
+}
+
+// Usage - map User struct to "TBL_USERS" table
+lit.RegisterModelWithNaming[User](lit.PostgreSQL, ExactTableStrategy{TableName: "TBL_USERS"})
+// User → TBL_USERS
+```
+
+### Example: Schema-Qualified Table Names
+
+```go
+type SchemaTableStrategy struct {
+    Schema string
+}
+
+func (s SchemaTableStrategy) GetTableNameFromStructName(name string) string {
+    return s.Schema + "." + toSnakeCase(name) + "s"
+}
+
+func (s SchemaTableStrategy) GetColumnNameFromStructName(name string) string {
+    return toSnakeCase(name)
 }
 
 // Usage
-lit.RegisterModelWithNaming[User](lit.PostgreSQL, UppercaseNamingStrategy{})
-// User → USERS, FirstName → FIRST_NAME
+lit.RegisterModelWithNaming[User](lit.PostgreSQL, SchemaTableStrategy{Schema: "public"})
+// User → public.users
 ```
+
+---
 
 ## Using Different Strategies Per Model
 
@@ -120,40 +226,44 @@ Each model can have its own naming strategy:
 lit.RegisterModel[User](lit.PostgreSQL)
 // User → users
 
-// Custom naming for LegacyCustomer
-lit.RegisterModelWithNaming[LegacyCustomer](lit.PostgreSQL, PrefixedNamingStrategy{Prefix: "legacy_"})
+// Prefixed tables for LegacyCustomer
+lit.RegisterModelWithNaming[LegacyCustomer](lit.PostgreSQL, PrefixedTableStrategy{Prefix: "legacy_"})
 // LegacyCustomer → legacy_legacy_customers
 
-// Different strategy for AuditLog
-lit.RegisterModelWithNaming[AuditLog](lit.PostgreSQL, SingularNamingStrategy{})
+// Singular naming for AuditLog
+lit.RegisterModelWithNaming[AuditLog](lit.PostgreSQL, SingularTableStrategy{})
 // AuditLog → audit_log
+
+// Exact table name for SpecialModel
+lit.RegisterModelWithNaming[SpecialModel](lit.PostgreSQL, ExactTableStrategy{TableName: "my_special_table"})
+// SpecialModel → my_special_table
 ```
 
-## Common Patterns
+---
 
-### Match Existing Database Schema
+## Complete Example: Legacy Database Integration
 
-When working with an existing database that doesn't follow snake_case:
+When working with an existing database that doesn't follow conventions, combine table and column naming:
 
 ```go
-type ExactNamingStrategy struct {
+type LegacyNamingStrategy struct {
     TableName string
     Columns   map[string]string
 }
 
-func (s ExactNamingStrategy) GetTableNameFromStructName(name string) string {
+func (s LegacyNamingStrategy) GetTableNameFromStructName(name string) string {
     return s.TableName
 }
 
-func (s ExactNamingStrategy) GetColumnNameFromStructName(name string) string {
+func (s LegacyNamingStrategy) GetColumnNameFromStructName(name string) string {
     if col, ok := s.Columns[name]; ok {
         return col
     }
-    return name
+    return name // Fallback to exact field name
 }
 
-// Usage for a legacy table "TBL_USERS"
-lit.RegisterModelWithNaming[User](lit.PostgreSQL, ExactNamingStrategy{
+// Usage for a legacy table "TBL_USERS" with non-standard columns
+lit.RegisterModelWithNaming[User](lit.PostgreSQL, LegacyNamingStrategy{
     TableName: "TBL_USERS",
     Columns: map[string]string{
         "Id":        "USER_ID",
@@ -162,4 +272,39 @@ lit.RegisterModelWithNaming[User](lit.PostgreSQL, ExactNamingStrategy{
         "Email":     "EMAIL_ADDR",
     },
 })
+// User struct maps to:
+// - Table: TBL_USERS
+// - Columns: USER_ID, FNAME, LNAME, EMAIL_ADDR
+```
+
+---
+
+## Helper Function
+
+Most examples use this helper for snake_case conversion:
+
+```go
+func toSnakeCase(input string) string {
+	var result strings.Builder
+	runes := []rune(input)
+
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if unicode.IsUpper(r) {
+			if i > 0 {
+				prevLower := unicode.IsLower(runes[i-1])
+				nextLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+				prevUpper := unicode.IsUpper(runes[i-1])
+
+				if prevLower || (prevUpper && nextLower) {
+					result.WriteRune('_')
+				}
+			}
+			result.WriteRune(unicode.ToLower(r))
+		} else {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
 ```

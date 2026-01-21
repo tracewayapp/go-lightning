@@ -65,27 +65,33 @@ type DbNamingStrategy interface {
 type DefaultDbNamingStrategy struct{}
 
 func (d DefaultDbNamingStrategy) GetTableNameFromStructName(input string) string {
-	var result strings.Builder
-	for i, r := range input {
-		if unicode.IsUpper(r) {
-			if i > 0 {
-				result.WriteRune('_')
-			}
-			result.WriteRune(unicode.ToLower(r))
-		} else {
-			result.WriteRune(r)
-		}
-	}
-	result.WriteRune('s')
-	return result.String()
+	return toSnakeCase(input) + "s"
 }
 
 func (d DefaultDbNamingStrategy) GetColumnNameFromStructName(input string) string {
+	return toSnakeCase(input)
+}
+
+// toSnakeCase converts a CamelCase string to snake_case, keeping consecutive
+// uppercase letters together as acronyms (e.g., "HTTPRequest" -> "http_request").
+func toSnakeCase(input string) string {
 	var result strings.Builder
-	for i, r := range input {
+	runes := []rune(input)
+
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
 		if unicode.IsUpper(r) {
 			if i > 0 {
-				result.WriteRune('_')
+				prevLower := unicode.IsLower(runes[i-1])
+				nextLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+				prevUpper := unicode.IsUpper(runes[i-1])
+
+				// Add underscore if:
+				// - Previous char was lowercase (start of new word), OR
+				// - Previous char was uppercase AND next char is lowercase (end of acronym)
+				if prevLower || (prevUpper && nextLower) {
+					result.WriteRune('_')
+				}
 			}
 			result.WriteRune(unicode.ToLower(r))
 		} else {

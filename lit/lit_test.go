@@ -50,8 +50,13 @@ func TestDefaultDbNamingStrategy_GetTableNameFromStructName(t *testing.T) {
 	}{
 		{"User", "users"},
 		{"UserProfile", "user_profiles"},
-		{"HTTPRequest", "h_t_t_p_requests"},
+		{"HTTPRequest", "http_requests"},
 		{"A", "as"},
+		{"UserID", "user_ids"},
+		{"XMLParser", "xml_parsers"},
+		{"SimpleHTTP", "simple_https"},
+		{"ID", "ids"},
+		{"APIKey", "api_keys"},
 	}
 
 	for _, tt := range tests {
@@ -71,7 +76,11 @@ func TestDefaultDbNamingStrategy_GetColumnNameFromStructName(t *testing.T) {
 		{"Id", "id"},
 		{"FirstName", "first_name"},
 		{"email", "email"},
-		{"HTTPCode", "h_t_t_p_code"},
+		{"HTTPCode", "http_code"},
+		{"UserID", "user_id"},
+		{"XMLData", "xml_data"},
+		{"APIKey", "api_key"},
+		{"ID", "id"},
 	}
 
 	for _, tt := range tests {
