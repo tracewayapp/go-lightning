@@ -76,6 +76,7 @@ results, err := lit.Select[OrderWithCustomer](db, `
 ### Important: Column Aliases
 
 Use SQL aliases (`AS`) to match your struct field names:
+
 - `o.id` → `order_id` (matches `OrderId` field)
 - `c.name` → `customer_name` (matches `CustomerName` field)
 

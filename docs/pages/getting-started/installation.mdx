@@ -50,7 +50,7 @@ type User struct {
 }
 
 func main() {
-    lit.RegisterModel[User](lit.PostgreSQL)
+    lit.RegisterModel[User](lit.PostgreSQL) // or lit.MySQL
     fmt.Println("go-lightning installed successfully!")
 }
 ```

@@ -53,9 +53,9 @@ At application startup, register your model with the appropriate driver:
 import "github.com/tracewayapp/go-lightning/lit"
 
 func init() {
-    lit.RegisterModel[User](lit.PostgreSQL)
-    // or for MySQL:
-    // lit.RegisterModel[User](lit.MySQL)
+    lit.RegisterDriver(lit.PostgreSQL) // or lit.MySQL for MySQL
+    lit.RegisterModel[User]()
+    // or lit.RegisterModel[User](lit.PostgreSQL) if not using default driver
 }
 ```
 
@@ -67,8 +67,9 @@ We recommend registering the models in a centralized place that you invoke in yo
 import "github.com/tracewayapp/go-lightning/lit"
 
 func RegisterModels() {
-    lit.RegisterModel[User](lit.PostgreSQL)
-    lit.RegisterModel[Invoice](lit.PostgreSQL)
+    lit.RegisterDriver(lit.PostgreSQL) // or lit.MySQL
+    lit.RegisterModel[User]()
+    lit.RegisterModel[Invoice]()
     // ... register other models
 }
 

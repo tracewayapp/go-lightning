@@ -27,6 +27,22 @@ func init() {
 }
 ```
 
+## Driver Registration
+
+You can register default driver globally. This driver will be used for all models registered without specifying a driver.
+
+```go
+lit.RegisterDriver(lit.PostgreSQL) // or lit.MySQL
+lit.RegisterModel[User]() // uses PostgreSQL driver
+```
+
+If for any reason you need to register a model with a different driver than the default, you can still specify it explicitly:
+
+```go
+lit.RegisterDriver(lit.PostgreSQL)
+lit.RegisterModel[User](lit.MySQL) // uses MySQL driver
+```
+
 ## What Gets Cached
 
 When you call `RegisterModel`, go-lightning creates a `FieldMap` containing:

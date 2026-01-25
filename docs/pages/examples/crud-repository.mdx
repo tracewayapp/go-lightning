@@ -157,14 +157,16 @@ import (
 )
 
 func init() {
+    // Register default driver
+    lit.RegisterDriver(lit.PostgreSQL)
     // Register models at startup
-    lit.RegisterModel[models.User](lit.PostgreSQL)
+    lit.RegisterModel[models.User]()
 
     // Register helper structs for queries
     type CountResult struct{ Count int }
     type ExistsResult struct{ Exists bool }
-    lit.RegisterModel[CountResult](lit.PostgreSQL)
-    lit.RegisterModel[ExistsResult](lit.PostgreSQL)
+    lit.RegisterModel[CountResult]()
+    lit.RegisterModel[ExistsResult]()
 }
 
 func main() {

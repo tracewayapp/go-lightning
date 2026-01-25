@@ -22,6 +22,24 @@ func RegisterModel[T any](driver Driver)
 lit.RegisterModel[User](lit.PostgreSQL)
 ```
 
+## RegisterDriver
+
+Sets the default database driver for model registration.
+
+```go
+func RegisterDriver(driver Driver)
+```
+
+**Parameters:**
+
+- `driver`: Database driver (`lit.PostgreSQL` or `lit.MySQL`)
+
+**Example:**
+
+```go
+lit.RegisterDriver(lit.PostgreSQL)
+```
+
 ### RegisterModelWithNaming
 
 Registers a model with a custom naming strategy.
