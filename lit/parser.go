@@ -28,10 +28,68 @@ func ParseNamedQuery(driver Driver, query string, params map[string]any) (string
 			out.WriteRune(r)
 			i++
 			for i < len(runes) {
+				// MySQL backslash escape: skip the next character
+				if driver == MySQL && runes[i] == '\\' && i+1 < len(runes) {
+					out.WriteRune(runes[i])
+					i++
+					out.WriteRune(runes[i])
+					i++
+					continue
+				}
 				out.WriteRune(runes[i])
 				if runes[i] == '\'' {
 					// Check for escaped quote ''
 					if i+1 < len(runes) && runes[i+1] == '\'' {
+						i++
+						out.WriteRune(runes[i])
+						i++
+						continue
+					}
+					break
+				}
+				i++
+			}
+			continue
+		}
+
+		// Double-quoted string/identifier: copy verbatim
+		if r == '"' {
+			out.WriteRune(r)
+			i++
+			for i < len(runes) {
+				// MySQL backslash escape: skip the next character
+				if driver == MySQL && runes[i] == '\\' && i+1 < len(runes) {
+					out.WriteRune(runes[i])
+					i++
+					out.WriteRune(runes[i])
+					i++
+					continue
+				}
+				out.WriteRune(runes[i])
+				if runes[i] == '"' {
+					// Check for escaped quote ""
+					if i+1 < len(runes) && runes[i+1] == '"' {
+						i++
+						out.WriteRune(runes[i])
+						i++
+						continue
+					}
+					break
+				}
+				i++
+			}
+			continue
+		}
+
+		// Backtick identifier: copy verbatim
+		if r == '`' {
+			out.WriteRune(r)
+			i++
+			for i < len(runes) {
+				out.WriteRune(runes[i])
+				if runes[i] == '`' {
+					// Check for escaped backtick ``
+					if i+1 < len(runes) && runes[i+1] == '`' {
 						i++
 						out.WriteRune(runes[i])
 						i++

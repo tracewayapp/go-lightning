@@ -488,6 +488,140 @@ func TestUpdateNamed(t *testing.T) {
 	})
 }
 
+func TestParseNamedQuery_QuotingEdgeCases(t *testing.T) {
+	t.Run("double quoted string MySQL", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(MySQL,
+			`SELECT * FROM users WHERE id = :id AND name = "has :param inside"`, params)
+		require.NoError(t, err)
+		assert.Equal(t, `SELECT * FROM users WHERE id = ? AND name = "has :param inside"`, q)
+		assert.Equal(t, []any{1}, args)
+	})
+
+	t.Run("double quoted identifier PG", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(PostgreSQL,
+			`SELECT * FROM "my:table" WHERE id = :id`, params)
+		require.NoError(t, err)
+		assert.Equal(t, `SELECT * FROM "my:table" WHERE id = $1`, q)
+		assert.Equal(t, []any{1}, args)
+	})
+
+	t.Run("double quoted escape", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(PostgreSQL,
+			`SELECT * FROM "col""name:fake" WHERE id = :id`, params)
+		require.NoError(t, err)
+		assert.Equal(t, `SELECT * FROM "col""name:fake" WHERE id = $1`, q)
+		assert.Equal(t, []any{1}, args)
+	})
+
+	t.Run("backtick identifier MySQL", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(MySQL,
+			"SELECT * FROM `col:name` WHERE id = :id", params)
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT * FROM `col:name` WHERE id = ?", q)
+		assert.Equal(t, []any{1}, args)
+	})
+
+	t.Run("backtick escape", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(MySQL,
+			"SELECT * FROM `col``name:fake` WHERE id = :id", params)
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT * FROM `col``name:fake` WHERE id = ?", q)
+		assert.Equal(t, []any{1}, args)
+	})
+
+	t.Run("backslash escape MySQL", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(MySQL,
+			`SELECT * FROM users WHERE name = 'it\'s :param' AND id = :id`, params)
+		require.NoError(t, err)
+		assert.Equal(t, `SELECT * FROM users WHERE name = 'it\'s :param' AND id = ?`, q)
+		assert.Equal(t, []any{1}, args)
+	})
+
+	t.Run("backslash escape PG uses SQL standard", func(t *testing.T) {
+		// In PostgreSQL, backslash is not an escape character by default.
+		// 'it\'  is a complete string (ending at \'), then s is outside, then :param is a param.
+		params := map[string]any{"param": "val"}
+
+		q, args, err := ParseNamedQuery(PostgreSQL,
+			`SELECT 'it\' || :param`, params)
+		require.NoError(t, err)
+		assert.Equal(t, `SELECT 'it\' || $1`, q)
+		assert.Equal(t, []any{"val"}, args)
+	})
+
+	t.Run("mixed quoting", func(t *testing.T) {
+		params := map[string]any{"id": 1, "name": "test"}
+
+		q, args, err := ParseNamedQuery(MySQL,
+			"SELECT * FROM `my:table` WHERE name = ':skip' AND label = \"has :fake\" AND id = :id AND val = :name", params)
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT * FROM `my:table` WHERE name = ':skip' AND label = \"has :fake\" AND id = ? AND val = ?", q)
+		assert.Equal(t, []any{1, "test"}, args)
+	})
+
+	t.Run("backslash escaped double quote in double quoted string MySQL", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(MySQL,
+			`SELECT * FROM users WHERE name = "say \"hello\" :param" AND id = :id`, params)
+		require.NoError(t, err)
+		assert.Equal(t, `SELECT * FROM users WHERE name = "say \"hello\" :param" AND id = ?`, q)
+		assert.Equal(t, []any{1}, args)
+	})
+
+	t.Run("backslash backslash in double quoted string MySQL", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(MySQL,
+			`SELECT * FROM users WHERE name = "\\" AND id = :id`, params)
+		require.NoError(t, err)
+		assert.Equal(t, `SELECT * FROM users WHERE name = "\\" AND id = ?`, q)
+		assert.Equal(t, []any{1}, args)
+	})
+
+	t.Run("four single quotes", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(PostgreSQL,
+			"SELECT * FROM users WHERE name = '''' AND id = :id", params)
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT * FROM users WHERE name = '''' AND id = $1", q)
+		assert.Equal(t, []any{1}, args)
+	})
+
+	t.Run("single quote inside double quotes", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(MySQL,
+			`SELECT * FROM users WHERE id = :id AND name = "it's :param"`, params)
+		require.NoError(t, err)
+		assert.Equal(t, `SELECT * FROM users WHERE id = ? AND name = "it's :param"`, q)
+		assert.Equal(t, []any{1}, args)
+	})
+
+	t.Run("double quote inside single quotes", func(t *testing.T) {
+		params := map[string]any{"id": 1}
+
+		q, args, err := ParseNamedQuery(PostgreSQL,
+			`SELECT * FROM users WHERE id = :id AND name = 'say "hello :param"'`, params)
+		require.NoError(t, err)
+		assert.Equal(t, `SELECT * FROM users WHERE id = $1 AND name = 'say "hello :param"'`, q)
+		assert.Equal(t, []any{1}, args)
+	})
+}
+
 func TestTypeP(t *testing.T) {
 	delete(StructToFieldMap, reflect.TypeFor[TestUser]())
 	RegisterModel[TestUser](PostgreSQL)
