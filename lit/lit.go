@@ -13,6 +13,7 @@ type Driver int
 const (
 	PostgreSQL Driver = iota
 	MySQL
+	SQLite
 )
 
 func (d Driver) String() string {
@@ -21,6 +22,8 @@ func (d Driver) String() string {
 		return "PostgreSQL"
 	case MySQL:
 		return "MySQL"
+	case SQLite:
+		return "SQLite"
 	default:
 		return "Unknown"
 	}
@@ -37,6 +40,16 @@ func (d Driver) InsertAndGetId(ex Executor, query string, args ...any) (int, err
 		}
 		return id, nil
 	case MySQL:
+		result, err := ex.Exec(query, args...)
+		if err != nil {
+			return 0, err
+		}
+		id, err := result.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
+		return int(id), nil
+	case SQLite:
 		result, err := ex.Exec(query, args...)
 		if err != nil {
 			return 0, err
@@ -164,6 +177,8 @@ func RegisterModelWithNaming[T any](driver Driver, namingStrategy DbNamingStrate
 		queryGenerator = PgInsertUpdateQueryGenerator{}
 	case MySQL:
 		queryGenerator = MySqlInsertUpdateQueryGenerator{}
+	case SQLite:
+		queryGenerator = SqliteInsertUpdateQueryGenerator{}
 	default:
 		panic(fmt.Sprintf("unsupported driver: %v", driver))
 	}
