@@ -23,27 +23,9 @@ func JoinStringForIn[T any](offset int, params []string) string {
 		return pgJoinStringForIn(offset, len(params))
 	}
 
-	switch fieldMap.Driver {
-	case PostgreSQL:
-		return pgJoinStringForIn(offset, len(params))
-	case MySQL:
-		return mysqlJoinStringForIn(len(params))
-	case SQLite:
-		return sqliteJoinStringForIn(len(params))
-	default:
-		return pgJoinStringForIn(offset, len(params))
-	}
+	return fieldMap.Driver.JoinStringForIn(offset, len(params))
 }
 
 func JoinStringForInWithDriver(driver Driver, offset int, count int) string {
-	switch driver {
-	case PostgreSQL:
-		return pgJoinStringForIn(offset, count)
-	case MySQL:
-		return mysqlJoinStringForIn(count)
-	case SQLite:
-		return sqliteJoinStringForIn(count)
-	default:
-		return pgJoinStringForIn(offset, count)
-	}
+	return driver.JoinStringForIn(offset, count)
 }

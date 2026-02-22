@@ -4,9 +4,15 @@ import (
 	"strings"
 )
 
-type SqliteInsertUpdateQueryGenerator struct{}
+type sqliteDriver struct{}
 
-func (SqliteInsertUpdateQueryGenerator) GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string) {
+var SQLite Driver = &sqliteDriver{}
+
+func (d *sqliteDriver) Name() string { return "SQLite" }
+
+func (d *sqliteDriver) String() string { return d.Name() }
+
+func (d *sqliteDriver) GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string) {
 	var insertQuery strings.Builder
 
 	insertQuery.WriteString("INSERT INTO ")
@@ -40,7 +46,7 @@ func (SqliteInsertUpdateQueryGenerator) GenerateInsertQuery(tableName string, co
 	return insertQuery.String(), insertColumns
 }
 
-func (SqliteInsertUpdateQueryGenerator) GenerateUpdateQuery(tableName string, columnKeys []string) string {
+func (d *sqliteDriver) GenerateUpdateQuery(tableName string, columnKeys []string) string {
 	var updateQuery strings.Builder
 	updateQuery.WriteString("UPDATE ")
 	updateQuery.WriteString(sqliteEscapeReserved(tableName))
@@ -59,6 +65,35 @@ func (SqliteInsertUpdateQueryGenerator) GenerateUpdateQuery(tableName string, co
 
 	return updateQuery.String()
 }
+
+func (d *sqliteDriver) InsertAndGetId(ex Executor, query string, args ...any) (int, error) {
+	result, err := ex.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return int(id), nil
+}
+
+func (d *sqliteDriver) Placeholder(argIndex int) string {
+	return "?"
+}
+
+func (d *sqliteDriver) SupportsBackslashEscape() bool { return false }
+
+func (d *sqliteDriver) RenumberWhereClause(where string, offset int) string {
+	return where
+}
+
+func (d *sqliteDriver) JoinStringForIn(offset int, count int) string {
+	return sqliteJoinStringForIn(count)
+}
+
+// Deprecated: Use SQLite variable directly. SqliteInsertUpdateQueryGenerator is kept for backward compatibility.
+type SqliteInsertUpdateQueryGenerator = sqliteDriver
 
 func sqliteJoinStringForIn(count int) string {
 	var sb strings.Builder

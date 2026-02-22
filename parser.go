@@ -3,16 +3,13 @@ package lit
 import (
 	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
 	"unicode"
 )
 
 func ParseNamedQuery(driver Driver, query string, params map[string]any) (string, []any, error) {
-	switch driver {
-	case PostgreSQL, MySQL, SQLite:
-	default:
-		return "", nil, fmt.Errorf("unsupported driver: %v", driver)
+	if driver == nil {
+		return "", nil, fmt.Errorf("driver is nil")
 	}
 
 	runes := []rune(query)
@@ -29,7 +26,7 @@ func ParseNamedQuery(driver Driver, query string, params map[string]any) (string
 			i++
 			for i < len(runes) {
 				// MySQL backslash escape: skip the next character
-				if driver == MySQL && runes[i] == '\\' && i+1 < len(runes) {
+				if driver.SupportsBackslashEscape() && runes[i] == '\\' && i+1 < len(runes) {
 					out.WriteRune(runes[i])
 					i++
 					out.WriteRune(runes[i])
@@ -58,7 +55,7 @@ func ParseNamedQuery(driver Driver, query string, params map[string]any) (string
 			i++
 			for i < len(runes) {
 				// MySQL backslash escape: skip the next character
-				if driver == MySQL && runes[i] == '\\' && i+1 < len(runes) {
+				if driver.SupportsBackslashEscape() && runes[i] == '\\' && i+1 < len(runes) {
 					out.WriteRune(runes[i])
 					i++
 					out.WriteRune(runes[i])
@@ -129,12 +126,7 @@ func ParseNamedQuery(driver Driver, query string, params map[string]any) (string
 				argIndex++
 				args = append(args, val)
 
-				switch driver {
-				case PostgreSQL:
-					out.WriteString("$" + strconv.Itoa(argIndex))
-				case MySQL, SQLite:
-					out.WriteRune('?')
-				}
+				out.WriteString(driver.Placeholder(argIndex))
 
 				i = j - 1
 				continue

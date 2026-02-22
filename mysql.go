@@ -4,9 +4,15 @@ import (
 	"strings"
 )
 
-type MySqlInsertUpdateQueryGenerator struct{}
+type mysqlDriver struct{}
 
-func (MySqlInsertUpdateQueryGenerator) GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string) {
+var MySQL Driver = &mysqlDriver{}
+
+func (d *mysqlDriver) Name() string { return "MySQL" }
+
+func (d *mysqlDriver) String() string { return d.Name() }
+
+func (d *mysqlDriver) GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string) {
 	var insertQuery strings.Builder
 
 	insertQuery.WriteString("INSERT INTO ")
@@ -40,7 +46,7 @@ func (MySqlInsertUpdateQueryGenerator) GenerateInsertQuery(tableName string, col
 	return insertQuery.String(), insertColumns
 }
 
-func (MySqlInsertUpdateQueryGenerator) GenerateUpdateQuery(tableName string, columnKeys []string) string {
+func (d *mysqlDriver) GenerateUpdateQuery(tableName string, columnKeys []string) string {
 	var updateQuery strings.Builder
 	updateQuery.WriteString("UPDATE ")
 	updateQuery.WriteString(mysqlEscapeReserved(tableName))
@@ -59,6 +65,35 @@ func (MySqlInsertUpdateQueryGenerator) GenerateUpdateQuery(tableName string, col
 
 	return updateQuery.String()
 }
+
+func (d *mysqlDriver) InsertAndGetId(ex Executor, query string, args ...any) (int, error) {
+	result, err := ex.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return int(id), nil
+}
+
+func (d *mysqlDriver) Placeholder(argIndex int) string {
+	return "?"
+}
+
+func (d *mysqlDriver) SupportsBackslashEscape() bool { return true }
+
+func (d *mysqlDriver) RenumberWhereClause(where string, offset int) string {
+	return where
+}
+
+func (d *mysqlDriver) JoinStringForIn(offset int, count int) string {
+	return mysqlJoinStringForIn(count)
+}
+
+// Deprecated: Use MySQL variable directly. MySqlInsertUpdateQueryGenerator is kept for backward compatibility.
+type MySqlInsertUpdateQueryGenerator = mysqlDriver
 
 func mysqlJoinStringForIn(count int) string {
 	var sb strings.Builder

@@ -1,0 +1,209 @@
+# Custom Drivers
+
+lit's `Driver` type is an interface, which means you can implement support for any SQL database without modifying the library itself.
+
+## Why Custom Drivers?
+
+lit ships with three built-in drivers — `lit.PostgreSQL`, `lit.MySQL`, and `lit.SQLite`. If you need to target a different database (e.g., CockroachDB, MSSQL, or a proprietary engine), you can create your own `Driver` implementation and use it everywhere a built-in driver would go.
+
+## The Driver Interface
+
+A custom driver must implement all methods of the `Driver` interface:
+
+```go
+type Driver interface {
+    // Human-readable name (e.g., "CockroachDB").
+    Name() string
+
+    // Embedded interface for INSERT/UPDATE query generation.
+    InsertUpdateQueryGenerator
+
+    // Execute an INSERT and return the generated ID.
+    // PostgreSQL-style drivers use RETURNING id + QueryRow.
+    // MySQL/SQLite-style drivers use Exec + LastInsertId.
+    InsertAndGetId(ex Executor, query string, args ...any) (int, error)
+
+    // Return the placeholder for the n-th argument (1-indexed).
+    // PostgreSQL: "$1", "$2", ...   MySQL/SQLite: "?"
+    Placeholder(argIndex int) string
+
+    // Whether backslash is treated as an escape character inside string
+    // literals. MySQL returns true; most other databases return false.
+    SupportsBackslashEscape() bool
+
+    // Renumber $N placeholders in a WHERE clause by the given offset.
+    // This is a no-op for ?-based drivers.
+    RenumberWhereClause(where string, offset int) string
+
+    // Generate comma-separated placeholders for IN clauses.
+    // PostgreSQL: "$3,$4,$5" (offset-aware).  MySQL/SQLite: "?,?,?"
+    JoinStringForIn(offset int, count int) string
+}
+```
+
+### InsertUpdateQueryGenerator
+
+The embedded `InsertUpdateQueryGenerator` interface adds two methods that lit calls at registration time to pre-build INSERT and UPDATE queries:
+
+```go
+type InsertUpdateQueryGenerator interface {
+    // Build the INSERT query and return the list of columns that need bind values.
+    // hasIntId indicates the model has an auto-increment integer id.
+    GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string)
+
+    // Build the UPDATE query (everything up to and including "WHERE ").
+    GenerateUpdateQuery(tableName string, columnKeys []string) string
+}
+```
+
+## Complete Example: CockroachDB Driver
+
+CockroachDB is wire-compatible with PostgreSQL, so its driver looks very similar to the built-in `pgDriver`. The key differences are the driver name and that you could add CockroachDB-specific query tweaks if needed.
+
+```go
+package myapp
+
+import (
+    "fmt"
+    "strconv"
+    "strings"
+
+    "github.com/tracewayapp/lit"
+)
+
+type cockroachDriver struct{}
+
+// CockroachDB is a custom lit.Driver for CockroachDB.
+var CockroachDB lit.Driver = &cockroachDriver{}
+
+func (d *cockroachDriver) Name() string { return "CockroachDB" }
+
+func (d *cockroachDriver) GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string) {
+    var b strings.Builder
+    b.WriteString("INSERT INTO ")
+    b.WriteString(tableName)
+    b.WriteString(" (")
+
+    for i, k := range columnKeys {
+        if i > 0 {
+            b.WriteString(",")
+        }
+        b.WriteString(k)
+    }
+    b.WriteString(") VALUES (")
+
+    counter := 1
+    var insertColumns []string
+    for i, k := range columnKeys {
+        if i > 0 {
+            b.WriteString(",")
+        }
+        if hasIntId && k == "id" {
+            b.WriteString("DEFAULT")
+        } else {
+            insertColumns = append(insertColumns, k)
+            b.WriteString("$" + strconv.Itoa(counter))
+            counter++
+        }
+    }
+    b.WriteString(") RETURNING id")
+    return b.String(), insertColumns
+}
+
+func (d *cockroachDriver) GenerateUpdateQuery(tableName string, columnKeys []string) string {
+    var b strings.Builder
+    b.WriteString("UPDATE ")
+    b.WriteString(tableName)
+    b.WriteString(" SET ")
+
+    for i, k := range columnKeys {
+        if i > 0 {
+            b.WriteString(",")
+        }
+        b.WriteString(k)
+        b.WriteString(" = $" + strconv.Itoa(i+1))
+    }
+    b.WriteString(" WHERE ")
+    return b.String()
+}
+
+func (d *cockroachDriver) InsertAndGetId(ex lit.Executor, query string, args ...any) (int, error) {
+    row := ex.QueryRow(query, args...)
+    var id int
+    if err := row.Scan(&id); err != nil {
+        return 0, err
+    }
+    return id, nil
+}
+
+func (d *cockroachDriver) Placeholder(argIndex int) string {
+    return "$" + strconv.Itoa(argIndex)
+}
+
+func (d *cockroachDriver) SupportsBackslashEscape() bool { return false }
+
+func (d *cockroachDriver) RenumberWhereClause(where string, offset int) string {
+    // CockroachDB uses $N placeholders like PostgreSQL, so renumber them.
+    if !strings.Contains(where, "$") {
+        return where
+    }
+    var b strings.Builder
+    parsing := false
+    for _, c := range where {
+        if c == '$' {
+            parsing = true
+            b.WriteRune(c)
+        } else if parsing {
+            if c >= '0' && c <= '9' {
+                continue
+            }
+            parsing = false
+            offset++
+            b.WriteString(strconv.Itoa(offset))
+            b.WriteRune(c)
+        } else {
+            b.WriteRune(c)
+        }
+    }
+    if parsing {
+        offset++
+        b.WriteString(strconv.Itoa(offset))
+    }
+    return b.String()
+}
+
+func (d *cockroachDriver) JoinStringForIn(offset int, count int) string {
+    var b strings.Builder
+    for i := 0; i < count; i++ {
+        if i > 0 {
+            b.WriteString(",")
+        }
+        b.WriteString(fmt.Sprintf("$%d", i+1+offset))
+    }
+    return b.String()
+}
+```
+
+## Registering Models with a Custom Driver
+
+Once you have a driver, use it exactly like a built-in one:
+
+```go
+func init() {
+    // As the default driver
+    lit.RegisterDriver(CockroachDB)
+    lit.RegisterModel[User]()
+
+    // Or per-model
+    lit.RegisterModel[User](CockroachDB)
+}
+```
+
+All lit functions (`Select`, `Insert`, `Update`, named queries, etc.) work with custom drivers automatically.
+
+## Tips
+
+- **Start from a built-in driver.** The source files `postgres.go`, `mysql.go`, and `sqlite.go` are short and self-contained. Copy the one closest to your target database and modify it.
+- **`$N` vs `?` placeholders.** If your database uses positional `$1, $2` placeholders (like PostgreSQL/CockroachDB), you need a real `RenumberWhereClause` and offset-aware `JoinStringForIn`. If it uses `?` (like MySQL/SQLite), both can be trivial.
+- **Backslash escaping.** Set `SupportsBackslashEscape()` to `true` only if your database treats `\` as an escape character inside string literals. This affects the named-parameter parser.
+- **Compile-time check.** Add a line like `var _ lit.Driver = (*myDriver)(nil)` to guarantee your struct satisfies the interface at compile time.

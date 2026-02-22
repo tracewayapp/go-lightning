@@ -1,13 +1,20 @@
 package lit
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
 
-type PgInsertUpdateQueryGenerator struct{}
+type pgDriver struct{}
 
-func (PgInsertUpdateQueryGenerator) GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string) {
+var PostgreSQL Driver = &pgDriver{}
+
+func (d *pgDriver) Name() string { return "PostgreSQL" }
+
+func (d *pgDriver) String() string { return d.Name() }
+
+func (d *pgDriver) GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string) {
 	var insertQuery strings.Builder
 
 	insertQuery.WriteString("INSERT INTO ")
@@ -43,7 +50,7 @@ func (PgInsertUpdateQueryGenerator) GenerateInsertQuery(tableName string, column
 	return insertQuery.String(), insertColumns
 }
 
-func (PgInsertUpdateQueryGenerator) GenerateUpdateQuery(tableName string, columnKeys []string) string {
+func (d *pgDriver) GenerateUpdateQuery(tableName string, columnKeys []string) string {
 	var updateQuery strings.Builder
 	updateQuery.WriteString("UPDATE ")
 	updateQuery.WriteString(pgEscapeReserved(tableName))
@@ -62,6 +69,33 @@ func (PgInsertUpdateQueryGenerator) GenerateUpdateQuery(tableName string, column
 
 	return updateQuery.String()
 }
+
+func (d *pgDriver) InsertAndGetId(ex Executor, query string, args ...any) (int, error) {
+	row := ex.QueryRow(query, args...)
+	var id int
+	err := row.Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func (d *pgDriver) Placeholder(argIndex int) string {
+	return "$" + strconv.Itoa(argIndex)
+}
+
+func (d *pgDriver) SupportsBackslashEscape() bool { return false }
+
+func (d *pgDriver) RenumberWhereClause(where string, offset int) string {
+	return pgRenumberPlaceholders(where, offset)
+}
+
+func (d *pgDriver) JoinStringForIn(offset int, count int) string {
+	return pgJoinStringForIn(offset, count)
+}
+
+// Deprecated: Use PostgreSQL variable directly. PgInsertUpdateQueryGenerator is kept for backward compatibility.
+type PgInsertUpdateQueryGenerator = pgDriver
 
 func pgRenumberPlaceholders(where string, offset int) string {
 	if !strings.Contains(where, "$") {
@@ -115,6 +149,10 @@ func pgEscapeReserved(tableOrColumn string) string {
 	}
 	return tableOrColumn
 }
+
+// ensure pgDriver implements Driver at compile time
+var _ Driver = (*pgDriver)(nil)
+var _ fmt.Stringer = (*pgDriver)(nil)
 
 var pgReservedKeywords = map[string]struct{}{
 	"ABORT":             {},

@@ -1,5 +1,6 @@
 {
   "naming-strategies": "Table & Column Naming",
   "uuid-support": "UUID Support",
-  "projections": "Projections & DTOs"
+  "projections": "Projections & DTOs",
+  "custom-drivers": "Custom Drivers"
 }

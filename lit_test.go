@@ -36,11 +36,10 @@ type TestMixedTags struct {
 	PhoneNumber string `lit:"phone"`
 }
 
-func TestDriverString(t *testing.T) {
-	assert.Equal(t, "PostgreSQL", PostgreSQL.String())
-	assert.Equal(t, "MySQL", MySQL.String())
-	assert.Equal(t, "SQLite", SQLite.String())
-	assert.Equal(t, "Unknown", Driver(99).String())
+func TestDriverName(t *testing.T) {
+	assert.Equal(t, "PostgreSQL", PostgreSQL.Name())
+	assert.Equal(t, "MySQL", MySQL.Name())
+	assert.Equal(t, "SQLite", SQLite.Name())
 }
 
 func TestRegisterDriver(t *testing.T) {
@@ -49,11 +48,11 @@ func TestRegisterDriver(t *testing.T) {
 
 	RegisterDriver(PostgreSQL)
 	assert.NotNil(t, defaultDriver)
-	assert.Equal(t, PostgreSQL, *defaultDriver)
+	assert.Equal(t, PostgreSQL, defaultDriver)
 
 	RegisterDriver(MySQL)
 	assert.NotNil(t, defaultDriver)
-	assert.Equal(t, MySQL, *defaultDriver)
+	assert.Equal(t, MySQL, defaultDriver)
 }
 
 func TestDefaultDbNamingStrategy_GetTableNameFromStructName(t *testing.T) {
@@ -1923,4 +1922,112 @@ func TestSelect_WithReservedKeywords_SQLite(t *testing.T) {
 	assert.Equal(t, "Name2", models[1].Name)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ==================== Custom Driver Tests ====================
+
+// mockDriver is a custom driver implementation for testing extensibility
+type mockDriver struct{}
+
+func (d *mockDriver) Name() string { return "MockDB" }
+
+func (d *mockDriver) GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string) {
+	var q []byte
+	q = append(q, "INSERT INTO "...)
+	q = append(q, tableName...)
+	q = append(q, " ("...)
+	insertColumns := []string{}
+	for i, k := range columnKeys {
+		q = append(q, k...)
+		if i != len(columnKeys)-1 {
+			q = append(q, ',')
+		}
+	}
+	q = append(q, ") VALUES ("...)
+	for i, k := range columnKeys {
+		if hasIntId && k == "id" {
+			q = append(q, "NULL"...)
+		} else {
+			insertColumns = append(insertColumns, k)
+			q = append(q, '?')
+		}
+		if i != len(columnKeys)-1 {
+			q = append(q, ',')
+		}
+	}
+	q = append(q, ')')
+	return string(q), insertColumns
+}
+
+func (d *mockDriver) GenerateUpdateQuery(tableName string, columnKeys []string) string {
+	var q []byte
+	q = append(q, "UPDATE "...)
+	q = append(q, tableName...)
+	q = append(q, " SET "...)
+	for i, k := range columnKeys {
+		q = append(q, k...)
+		q = append(q, " = ?"...)
+		if i != len(columnKeys)-1 {
+			q = append(q, ',')
+		}
+	}
+	q = append(q, " WHERE "...)
+	return string(q)
+}
+
+func (d *mockDriver) InsertAndGetId(ex Executor, query string, args ...any) (int, error) {
+	result, err := ex.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return int(id), nil
+}
+
+func (d *mockDriver) Placeholder(argIndex int) string              { return "?" }
+func (d *mockDriver) SupportsBackslashEscape() bool                { return false }
+func (d *mockDriver) RenumberWhereClause(w string, o int) string   { return w }
+func (d *mockDriver) JoinStringForIn(offset int, count int) string { return mysqlJoinStringForIn(count) }
+
+func TestCustomDriver_RegisterAndInsert(t *testing.T) {
+	type CustomUser struct {
+		Id    int
+		Name  string
+		Email string
+	}
+	delete(StructToFieldMap, reflect.TypeFor[CustomUser]())
+
+	custom := &mockDriver{}
+	RegisterModel[CustomUser](custom)
+
+	fieldMap, err := GetFieldMap(reflect.TypeFor[CustomUser]())
+	require.NoError(t, err)
+	assert.Equal(t, custom, fieldMap.Driver)
+	assert.Equal(t, "MockDB", fieldMap.Driver.Name())
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	mock.ExpectExec("INSERT INTO custom_users").
+		WithArgs("Alice", "alice@example.com").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	user := &CustomUser{Name: "Alice", Email: "alice@example.com"}
+	id, err := Insert[CustomUser](db, user)
+	require.NoError(t, err)
+	assert.Equal(t, 1, id)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCustomDriver_ParseNamedQuery(t *testing.T) {
+	custom := &mockDriver{}
+	q, args, err := ParseNamedQuery(custom, "SELECT * FROM users WHERE id = :id", map[string]any{"id": 42})
+	require.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users WHERE id = ?", q)
+	assert.Equal(t, []any{42}, args)
 }

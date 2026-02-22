@@ -11,60 +11,30 @@ import (
 // P is a shorthand for named parameter maps used with Named functions.
 type P = map[string]any
 
-type Driver int
+type Driver interface {
+	// Human-readable name (e.g., "PostgreSQL")
+	Name() string
 
-const (
-	PostgreSQL Driver = iota
-	MySQL
-	SQLite
-)
+	// Embed existing query generation interface
+	InsertUpdateQueryGenerator
 
-func (d Driver) String() string {
-	switch d {
-	case PostgreSQL:
-		return "PostgreSQL"
-	case MySQL:
-		return "MySQL"
-	case SQLite:
-		return "SQLite"
-	default:
-		return "Unknown"
-	}
-}
+	// Execute INSERT and return generated ID.
+	// PG-style: RETURNING id + QueryRow. MySQL-style: Exec + LastInsertId.
+	InsertAndGetId(ex Executor, query string, args ...any) (int, error)
 
-func (d Driver) InsertAndGetId(ex Executor, query string, args ...any) (int, error) {
-	switch d {
-	case PostgreSQL:
-		row := ex.QueryRow(query, args...)
-		var id int
-		err := row.Scan(&id)
-		if err != nil {
-			return 0, err
-		}
-		return id, nil
-	case MySQL:
-		result, err := ex.Exec(query, args...)
-		if err != nil {
-			return 0, err
-		}
-		id, err := result.LastInsertId()
-		if err != nil {
-			return 0, err
-		}
-		return int(id), nil
-	case SQLite:
-		result, err := ex.Exec(query, args...)
-		if err != nil {
-			return 0, err
-		}
-		id, err := result.LastInsertId()
-		if err != nil {
-			return 0, err
-		}
-		return int(id), nil
-	default:
-		return 0, fmt.Errorf("unsupported driver: %v", d)
-	}
+	// Return placeholder for the n-th argument (1-indexed).
+	// PG: "$1", "$2". MySQL/SQLite: "?".
+	Placeholder(argIndex int) string
+
+	// Whether backslash escapes inside string literals (MySQL = true, others = false).
+	SupportsBackslashEscape() bool
+
+	// Renumber $N placeholders in WHERE clause by offset. No-op for ?-based drivers.
+	RenumberWhereClause(where string, offset int) string
+
+	// Generate comma-separated placeholders for IN clauses.
+	// PG: "$3,$4,$5" (offset-aware). MySQL/SQLite: "?,?,?" (offset ignored).
+	JoinStringForIn(offset int, count int) string
 }
 
 type Executor interface {
@@ -133,10 +103,10 @@ type InsertUpdateQueryGenerator interface {
 }
 
 var StructToFieldMap = make(map[reflect.Type]*FieldMap)
-var defaultDriver *Driver = nil
+var defaultDriver Driver = nil
 
 func RegisterDriver(driver Driver) {
-	defaultDriver = &driver
+	defaultDriver = driver
 }
 
 func RegisterModel[T any](driver ...Driver) {
@@ -144,7 +114,7 @@ func RegisterModel[T any](driver ...Driver) {
 	if len(driver) > 0 {
 		d = driver[0]
 	} else if defaultDriver != nil {
-		d = *defaultDriver
+		d = defaultDriver
 	} else {
 		panic("no driver provided and no default driver set.")
 	}
@@ -174,20 +144,8 @@ func RegisterModelWithNaming[T any](driver Driver, namingStrategy DbNamingStrate
 
 	tableName := namingStrategy.GetTableNameFromStructName(t.Name())
 
-	var queryGenerator InsertUpdateQueryGenerator
-	switch driver {
-	case PostgreSQL:
-		queryGenerator = PgInsertUpdateQueryGenerator{}
-	case MySQL:
-		queryGenerator = MySqlInsertUpdateQueryGenerator{}
-	case SQLite:
-		queryGenerator = SqliteInsertUpdateQueryGenerator{}
-	default:
-		panic(fmt.Sprintf("unsupported driver: %v", driver))
-	}
-
-	insertQuery, insertColumns := queryGenerator.GenerateInsertQuery(tableName, columnKeys, hasIntId)
-	updateQuery := queryGenerator.GenerateUpdateQuery(tableName, columnKeys)
+	insertQuery, insertColumns := driver.GenerateInsertQuery(tableName, columnKeys, hasIntId)
+	updateQuery := driver.GenerateUpdateQuery(tableName, columnKeys)
 
 	StructToFieldMap[t] = &FieldMap{
 		ColumnsMap:    columnsMap,

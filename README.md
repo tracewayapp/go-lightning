@@ -16,7 +16,7 @@ The project is currently used in a **production environment**.
 
 ## Key Features
 
-- **Unified API**: The `lit` package provides a single API for both PostgreSQL and MySQL, with driver-specific optimizations handled internally.
+- **Unified API**: The `lit` package provides a single API for PostgreSQL, MySQL, SQLite, and custom database drivers, with driver-specific optimizations handled internally.
 - **Lightweight Projections**: The biggest advantage of `lit` is its ability to load DTOs and projections with minimal effort. Regardless of your table structure, mapping a query result to a Go struct is straightforward and clean.
 - **MySQL, PostgreSQL, and SQLite Support**: Register your models with the appropriate driver and the library handles query generation and driver-specific optimizations.
 - **Generic CRUD Operations**: Automatic generation of `INSERT` and `UPDATE` queries for registered types.
@@ -267,6 +267,29 @@ func init() {
 ```
 
 Note: The `lit` tag takes precedence over any naming strategy.
+
+### 8. Custom Drivers
+
+The `Driver` type is an interface, so you can implement your own driver for databases not built in. Your driver must implement all methods of the `Driver` interface:
+
+```go
+type cockroachDriver struct{}
+
+func (d *cockroachDriver) Name() string                        { return "CockroachDB" }
+func (d *cockroachDriver) Placeholder(argIndex int) string     { return fmt.Sprintf("$%d", argIndex) }
+func (d *cockroachDriver) SupportsBackslashEscape() bool       { return false }
+// ... implement remaining methods
+
+var CockroachDB lit.Driver = &cockroachDriver{}
+```
+
+Then register models with your custom driver:
+
+```go
+lit.RegisterModel[User](CockroachDB)
+```
+
+See the [Custom Drivers guide](https://lit.tracewayapp.com/guides/custom-drivers) for the full interface definition and a complete example.
 
 ## Contributions
 

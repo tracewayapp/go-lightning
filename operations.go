@@ -4,7 +4,6 @@ import (
 	"errors"
 	"reflect"
 	"slices"
-	"strings"
 
 	"github.com/google/uuid"
 )
@@ -148,11 +147,7 @@ func Update[T any](ex Executor, t *T, where string, args ...any) error {
 
 	params := append(*GetPointersForColumns[T](fieldMap.ColumnKeys, fieldMap, t), args...)
 
-	finalWhere := where
-	if fieldMap.Driver == PostgreSQL && strings.Contains(where, "$") {
-		offset := strings.Count(fieldMap.UpdateQuery, "$")
-		finalWhere = pgRenumberPlaceholders(where, offset)
-	}
+	finalWhere := fieldMap.Driver.RenumberWhereClause(where, len(fieldMap.ColumnKeys))
 
 	_, err = ex.Exec(fieldMap.UpdateQuery+finalWhere, params...)
 	return err

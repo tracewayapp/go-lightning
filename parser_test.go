@@ -185,10 +185,10 @@ func TestParseNamedQuery(t *testing.T) {
 		assert.Empty(t, args)
 	})
 
-	t.Run("unsupported driver", func(t *testing.T) {
-		_, _, err := ParseNamedQuery(Driver(99), "SELECT :id", map[string]any{"id": 1})
+	t.Run("nil driver", func(t *testing.T) {
+		_, _, err := ParseNamedQuery(nil, "SELECT :id", map[string]any{"id": 1})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported driver")
+		assert.Contains(t, err.Error(), "driver is nil")
 	})
 }
 

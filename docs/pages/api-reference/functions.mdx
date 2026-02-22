@@ -14,7 +14,7 @@ func RegisterModel[T any](driver Driver)
 
 **Parameters:**
 
-- `driver`: Database driver (`lit.PostgreSQL` or `lit.MySQL`)
+- `driver`: Database driver (`lit.PostgreSQL`, `lit.MySQL`, `lit.SQLite`, or a custom driver)
 
 **Example:**
 
@@ -32,7 +32,7 @@ func RegisterDriver(driver Driver)
 
 **Parameters:**
 
-- `driver`: Database driver (`lit.PostgreSQL` or `lit.MySQL`)
+- `driver`: Database driver (`lit.PostgreSQL`, `lit.MySQL`, `lit.SQLite`, or a custom driver)
 
 **Example:**
 
@@ -411,7 +411,7 @@ func ParseNamedQuery(driver Driver, query string, params map[string]any) (string
 
 **Parameters:**
 
-- `driver`: Database driver (`lit.PostgreSQL`, `lit.MySQL`, or `lit.SQLite`)
+- `driver`: Any `Driver` implementation (`lit.PostgreSQL`, `lit.MySQL`, `lit.SQLite`, or a custom driver)
 - `query`: SQL query with `:name` placeholders
 - `params`: Map of parameter names to values
 
@@ -536,15 +536,35 @@ users, err := lit.SelectNamed[User](db,
 
 ### Driver
 
-Database driver enum.
+Interface that database drivers must implement. lit provides three built-in drivers: `lit.PostgreSQL`, `lit.MySQL`, and `lit.SQLite`. You can also implement your own — see [Custom Drivers](/guides/custom-drivers).
 
 ```go
-type Driver int
+type Driver interface {
+    Name() string
+    InsertUpdateQueryGenerator
+    InsertAndGetId(ex Executor, query string, args ...any) (int, error)
+    Placeholder(argIndex int) string
+    SupportsBackslashEscape() bool
+    RenumberWhereClause(where string, offset int) string
+    JoinStringForIn(offset int, count int) string
+}
+```
 
-const (
-    PostgreSQL Driver = iota
-    MySQL
-)
+The embedded `InsertUpdateQueryGenerator` interface adds two additional methods:
+
+```go
+type InsertUpdateQueryGenerator interface {
+    GenerateInsertQuery(tableName string, columnKeys []string, hasIntId bool) (string, []string)
+    GenerateUpdateQuery(tableName string, columnKeys []string) string
+}
+```
+
+**Built-in drivers:**
+
+```go
+var PostgreSQL Driver = &pgDriver{}
+var MySQL      Driver = &mysqlDriver{}
+var SQLite     Driver = &sqliteDriver{}
 ```
 
 ### Executor

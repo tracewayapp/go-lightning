@@ -3,7 +3,7 @@
 ## Requirements
 
 - Go 1.21 or higher
-- A supported database (PostgreSQL or MySQL)
+- A supported database (PostgreSQL, MySQL, or SQLite)
 
 ## Install lit
 
@@ -31,6 +31,14 @@ go get github.com/lib/pq
 go get github.com/go-sql-driver/mysql
 ```
 
+### SQLite
+
+```bash
+go get github.com/mattn/go-sqlite3
+```
+
+You can also use a [custom driver](/guides/custom-drivers) to support databases not listed above.
+
 ## Verify Installation
 
 Create a simple program to verify everything is working:
@@ -50,7 +58,7 @@ type User struct {
 }
 
 func main() {
-    lit.RegisterModel[User](lit.PostgreSQL) // or lit.MySQL
+    lit.RegisterModel[User](lit.PostgreSQL) // or lit.MySQL, lit.SQLite
     fmt.Println("lit installed successfully!")
 }
 ```
