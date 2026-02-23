@@ -34,7 +34,7 @@ Documentation is available at https://lit.tracewayapp.com
 ## Installation
 
 ```bash
-go get github.com/tracewayapp/lit
+go get github.com/tracewayapp/lit/v2
 ```
 
 ## Configuration & Usage
@@ -44,7 +44,7 @@ go get github.com/tracewayapp/lit
 Every model you intend to use with generic functions must be registered with a specific driver.
 
 ```go
-import "github.com/tracewayapp/lit"
+import "github.com/tracewayapp/lit/v2"
 
 type User struct {
     Id        int
@@ -69,7 +69,7 @@ func init() {
 
 ```go
 import (
-    "github.com/tracewayapp/lit"
+    "github.com/tracewayapp/lit/v2"
     _ "github.com/jackc/pgx/v5/stdlib"
 )
 

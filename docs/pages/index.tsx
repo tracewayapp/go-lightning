@@ -158,7 +158,7 @@ export default function HomePage() {
                 </a>
               </div>
               <code className={s.installCmd}>
-                go get github.com/tracewayapp/lit
+                go get github.com/tracewayapp/lit/v2
               </code>
             </div>
           </section>

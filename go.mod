@@ -1,4 +1,4 @@
-module github.com/tracewayapp/lit
+module github.com/tracewayapp/lit/v2
 
 go 1.25.1
 

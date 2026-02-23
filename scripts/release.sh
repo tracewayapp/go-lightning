@@ -13,7 +13,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-MODULE="github.com/tracewayapp/lit"
+MODULE="github.com/tracewayapp/lit/v2"
 
 usage() {
     echo "Usage: $0 <version>"

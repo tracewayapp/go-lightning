@@ -5,7 +5,7 @@
 ## Installation
 
 ```bash
-go get github.com/tracewayapp/lit
+go get github.com/tracewayapp/lit/v2
 ```
 
 ## Core Concepts
@@ -15,7 +15,7 @@ go get github.com/tracewayapp/lit
 Every struct used with generic CRUD functions must be registered with a driver:
 
 ```go
-import "github.com/tracewayapp/lit"
+import "github.com/tracewayapp/lit/v2"
 
 type User struct {
     Id        int

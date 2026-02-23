@@ -5,7 +5,7 @@ go 1.25.1
 require (
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/jackc/pgx/v5 v5.7.2
-	github.com/tracewayapp/lit v0.0.0
+	github.com/tracewayapp/lit/v2 v0.0.0
 )
 
 require (
@@ -19,4 +19,4 @@ require (
 	golang.org/x/text v0.21.0 // indirect
 )
 
-replace github.com/tracewayapp/lit => ../..
+replace github.com/tracewayapp/lit/v2 => ../..

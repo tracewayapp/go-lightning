@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS users (
 At application startup, register your model with the appropriate driver:
 
 ```go
-import "github.com/tracewayapp/lit"
+import "github.com/tracewayapp/lit/v2"
 
 func init() {
     lit.RegisterDriver(lit.PostgreSQL) // or lit.MySQL for MySQL
@@ -64,7 +64,7 @@ Registration only happens once and caches INSERT/UPDATE queries for optimal perf
 We recommend registering the models in a centralized place that you invoke in your main function:
 
 ```go
-import "github.com/tracewayapp/lit"
+import "github.com/tracewayapp/lit/v2"
 
 func RegisterModels() {
     lit.RegisterDriver(lit.PostgreSQL) // or lit.MySQL
